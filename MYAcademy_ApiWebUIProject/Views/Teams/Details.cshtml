@@ -1,0 +1,672 @@
+﻿```cshtml
+@model SerieA.WebUI.Controllers.TeamDetailViewModel
+
+@{
+    ViewData["Title"] = Model.Name + " | Takım Detayı";
+
+    var matches = Model.Matches
+        ?? new List<SerieA.WebUI.Controllers.TeamMatchViewModel>();
+
+    var playedMatches = matches
+        .Where(m => m.Status == "Tamamlandı"
+                    && m.HomeScore.HasValue
+                    && m.AwayScore.HasValue)
+        .ToList();
+
+    int wins = 0;
+    int draws = 0;
+    int losses = 0;
+    int goalsFor = 0;
+    int goalsAgainst = 0;
+
+    foreach (var match in playedMatches)
+    {
+        bool isHome = match.HomeTeamId == Model.TeamId;
+
+        int scored = isHome
+            ? match.HomeScore!.Value
+            : match.AwayScore!.Value;
+
+        int conceded = isHome
+            ? match.AwayScore!.Value
+            : match.HomeScore!.Value;
+
+        goalsFor += scored;
+        goalsAgainst += conceded;
+
+        if (scored > conceded)
+            wins++;
+        else if (scored == conceded)
+            draws++;
+        else
+            losses++;
+    }
+
+    int points = wins * 3 + draws;
+    int goalDifference = goalsFor - goalsAgainst;
+
+    // En son oynanan beş maçı bul.
+    var lastFiveMatches = playedMatches
+        .OrderByDescending(m => m.MatchDate)
+        .ThenByDescending(m => m.MatchId)
+        .Take(5)
+        .Select(m =>
+        {
+            bool isHome = m.HomeTeamId == Model.TeamId;
+
+            int scored = isHome
+                ? m.HomeScore!.Value
+                : m.AwayScore!.Value;
+
+            int conceded = isHome
+                ? m.AwayScore!.Value
+                : m.HomeScore!.Value;
+
+            return new
+            {
+                Match = m,
+                Result = scored > conceded ? "G"
+                       : scored == conceded ? "B"
+                       : "M"
+            };
+        })
+        .ToList();
+
+    int formWins = lastFiveMatches.Count(x => x.Result == "G");
+    int formDraws = lastFiveMatches.Count(x => x.Result == "B");
+    int formLosses = lastFiveMatches.Count(x => x.Result == "M");
+}
+
+<style>
+    .team-page {
+        --bg: #07101f;
+        --panel: #101e36;
+        --line: #233653;
+        --text: #edf3ff;
+        --muted: #94a6c6;
+        --blue: #347cff;
+        --green: #1fc98a;
+        --yellow: #e5b341;
+        --red: #f2475c;
+        min-height: 100vh;
+        margin: -1.5rem;
+        padding: 30px 20px 60px;
+        background: radial-gradient(ellipse at 10% 0%, #152c50 0, transparent 45%), var(--bg);
+        color: var(--text);
+        font-family: Arial, sans-serif;
+    }
+
+    .team-shell {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .team-back {
+        display: inline-block;
+        margin-bottom: 18px;
+        color: #a9c9ff;
+        text-decoration: none;
+        font-size: 14px;
+    }
+
+        .team-back:hover {
+            color: white;
+        }
+
+    .team-hero {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        padding: 34px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: linear-gradient(130deg, #142b4d, #101e36 70%);
+    }
+
+    .team-logo {
+        display: grid;
+        place-items: center;
+        flex: 0 0 120px;
+        width: 120px;
+        height: 120px;
+        overflow: hidden;
+        border: 1px solid #ffffff20;
+        border-radius: 20px;
+        background: #ffffff08;
+    }
+
+        .team-logo img {
+            width: 100%;
+            height: 100%;
+            padding: 10px;
+            object-fit: contain;
+        }
+
+    .team-logo-placeholder {
+        color: #a9c9ff;
+        font-size: 28px;
+        font-weight: 800;
+    }
+
+    .team-eyebrow {
+        color: #83b2ff;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+    }
+
+    .team-title {
+        margin: 8px 0;
+        font-size: clamp(30px, 5vw, 48px);
+        font-weight: 800;
+    }
+
+    .team-subtitle {
+        margin: 0;
+        color: var(--muted);
+    }
+
+    .team-status {
+        display: inline-block;
+        margin-top: 14px;
+        padding: 6px 11px;
+        border-radius: 999px;
+        background: #1fc98a1a;
+        color: #48e0a6;
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+        .team-status.inactive {
+            background: #f2475c1a;
+            color: #ff7180;
+        }
+
+    .team-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin: 20px 0;
+    }
+
+    .team-stat,
+    .team-panel {
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: var(--panel);
+    }
+
+    .team-stat {
+        padding: 20px;
+    }
+
+        .team-stat span {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .team-stat strong {
+            display: block;
+            margin-top: 8px;
+            font-size: 28px;
+        }
+
+    .team-panel {
+        overflow: hidden;
+        margin-top: 18px;
+    }
+
+    .panel-heading {
+        padding: 20px 22px;
+        border-bottom: 1px solid var(--line);
+    }
+
+        .panel-heading h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .panel-heading p {
+            margin: 7px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+    .team-info-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1px;
+        background: var(--line);
+    }
+
+    .team-info-item {
+        padding: 20px;
+        background: var(--panel);
+        overflow-wrap: anywhere;
+    }
+
+        .team-info-item span {
+            display: block;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .team-info-item strong {
+            display: block;
+            margin-top: 7px;
+            font-size: 15px;
+        }
+
+    /* Son beş maç formu */
+    .team-form-content {
+        padding: 22px;
+    }
+
+    .team-form-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 20px 0;
+    }
+
+    .team-form-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        min-width: 58px;
+    }
+
+    .team-form-badge {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        color: white;
+        font-size: 17px;
+        font-weight: 800;
+    }
+
+        .team-form-badge.win {
+            background: #159767;
+        }
+
+        .team-form-badge.draw {
+            background: #a77918;
+        }
+
+        .team-form-badge.loss {
+            background: #c5374a;
+        }
+
+    .team-form-date {
+        color: var(--muted);
+        font-size: 11px;
+    }
+
+    .team-form-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        color: #c4d0e6;
+        font-size: 13px;
+    }
+
+        .team-form-summary strong {
+            margin-left: 5px;
+            color: white;
+        }
+
+    .form-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+        .form-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+    .legend-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    /* Maç tablosu */
+    .team-table-wrap {
+        overflow-x: auto;
+    }
+
+    .team-table {
+        width: 100%;
+        min-width: 650px;
+        border-collapse: collapse;
+    }
+
+        .team-table th,
+        .team-table td {
+            padding: 15px 18px;
+            border-bottom: 1px solid var(--line);
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .team-table th {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .team-table td {
+            font-size: 14px;
+        }
+
+        .team-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .team-table tbody tr:hover td {
+            background: #ffffff05;
+        }
+
+    .match-score {
+        display: inline-block;
+        min-width: 58px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        background: #1d3150;
+        text-align: center;
+        font-weight: 800;
+    }
+
+    .match-status {
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .empty-matches {
+        padding: 28px;
+        color: var(--muted);
+        text-align: center;
+    }
+
+    @@media (max-width: 700px) {
+        .team-page {
+            margin: -1rem;
+            padding: 18px 10px 35px;
+        }
+
+        .team-hero {
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 23px;
+        }
+
+        .team-logo {
+            width: 90px;
+            height: 90px;
+            flex-basis: 90px;
+        }
+
+        .team-stats {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .team-stat {
+            padding: 15px;
+        }
+
+            .team-stat strong {
+                font-size: 24px;
+            }
+
+        .team-info-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .team-form-content {
+            padding: 16px;
+        }
+
+        .team-form-list {
+            gap: 8px;
+        }
+    }
+
+    @@media (max-width: 380px) {
+        .team-info-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<main class="team-page">
+    <div class="team-shell">
+
+        <a class="team-back" asp-controller="Standings" asp-action="Index">
+            ← Puan durumuna dön
+        </a>
+
+        <section class="team-hero">
+            <div class="team-logo">
+                @if (!string.IsNullOrWhiteSpace(Model.LogoUrl))
+                {
+                    <img src="@Model.LogoUrl"
+                         alt="@Model.Name logosu"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+                    <span class="team-logo-placeholder"
+                          style="display:none">
+                        @(string.IsNullOrWhiteSpace(Model.ShortName)
+                                            ? Model.Name.Substring(0, Math.Min(3, Model.Name.Length)).ToUpperInvariant()
+                                            : Model.ShortName)
+                </span>
+                                }
+                else
+                {
+                    <span class="team-logo-placeholder">
+                        @(string.IsNullOrWhiteSpace(Model.ShortName)
+                                            ? Model.Name.Substring(0, Math.Min(3, Model.Name.Length)).ToUpperInvariant()
+                                            : Model.ShortName)
+                </span>
+                                }
+            </div>
+
+            <div>
+                <div class="team-eyebrow">İtalya · Serie A</div>
+                <h1 class="team-title">@Model.Name</h1>
+                <p class="team-subtitle">
+                    @(string.IsNullOrWhiteSpace(Model.City) ? "Şehir belirtilmemiş" : Model.City)
+                    ·
+                    @(string.IsNullOrWhiteSpace(Model.Stadium) ? "Stadyum bilgisi yok" : Model.Stadium)
+                </p>
+
+                <span class="team-status @(Model.Status ? "" : "inactive")">
+                    @(Model.Status ? "● Aktif takım" : "● Pasif takım")
+                </span>
+            </div>
+        </section>
+
+        <section class="team-stats">
+            <article class="team-stat">
+                <span>Toplam puan</span>
+                <strong>@points</strong>
+            </article>
+
+            <article class="team-stat">
+                <span>Galibiyet</span>
+                <strong>@wins</strong>
+            </article>
+
+            <article class="team-stat">
+                <span>Atılan gol</span>
+                <strong>@goalsFor</strong>
+            </article>
+
+            <article class="team-stat">
+                <span>Averaj</span>
+                <strong>@(goalDifference > 0 ? "+" : "")@goalDifference</strong>
+            </article>
+        </section>
+
+        <section class="team-panel">
+            <div class="panel-heading">
+                <h2>Takım bilgileri</h2>
+                <p>Kulübün temel bilgileri</p>
+            </div>
+
+            <div class="team-info-grid">
+                <div class="team-info-item">
+                    <span>Şehir</span>
+                    <strong>@(string.IsNullOrWhiteSpace(Model.City) ? "Belirtilmemiş" : Model.City)</strong>
+                </div>
+
+                <div class="team-info-item">
+                    <span>Stadyum</span>
+                    <strong>@(string.IsNullOrWhiteSpace(Model.Stadium) ? "Belirtilmemiş" : Model.Stadium)</strong>
+                </div>
+
+                <div class="team-info-item">
+                    <span>Kapasite</span>
+                    <strong>@Model.Capacity.ToString("N0") kişi</strong>
+                </div>
+
+                <div class="team-info-item">
+                    <span>Kuruluş yılı</span>
+                    <strong>@(Model.FoundationYear > 0 ? Model.FoundationYear.ToString() : "Belirtilmemiş")</strong>
+                </div>
+
+                <div class="team-info-item">
+                    <span>Kulüp kısa adı</span>
+                    <strong>@(string.IsNullOrWhiteSpace(Model.ShortName) ? "—" : Model.ShortName)</strong>
+                </div>
+
+                <div class="team-info-item">
+                    <span>Oynanan maç</span>
+                    <strong>@playedMatches.Count</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="team-panel">
+            <div class="panel-heading">
+                <h2>Son maç formu</h2>
+                <p>En son tamamlanan karşılaşmalardaki performans</p>
+            </div>
+
+            <div class="team-form-content">
+                @if (!lastFiveMatches.Any())
+                {
+                    <p style="color:#94a6c6;margin:0">
+                        Henüz tamamlanmış maç bulunmuyor.
+                    </p>
+                }
+                else
+                {
+                    <div class="team-form-list">
+                        @foreach (var item in lastFiveMatches)
+                        {
+                            <div class="team-form-item"
+                                 title="@($"{item.Match.HomeTeam?.Name} {item.Match.HomeScore} - {item.Match.AwayScore} {item.Match.AwayTeam?.Name}")">
+                                <span class="team-form-badge @(item.Result == "G" ? "win" : item.Result == "B" ? "draw" : "loss")">
+                                    @item.Result
+                                </span>
+
+                                <span class="team-form-date">
+                                    @item.Match.MatchDate.ToString("dd.MM")
+                                </span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="team-form-summary">
+                        <span>Galibiyet<strong>@formWins</strong></span>
+                        <span>Beraberlik<strong>@formDraws</strong></span>
+                        <span>Mağlubiyet<strong>@formLosses</strong></span>
+                    </div>
+
+                    <div class="form-legend">
+                        <span><i class="legend-dot" style="background:#159767"></i> G: Galibiyet</span>
+                        <span><i class="legend-dot" style="background:#a77918"></i> B: Beraberlik</span>
+                        <span><i class="legend-dot" style="background:#c5374a"></i> M: Mağlubiyet</span>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="team-panel">
+            <div class="panel-heading">
+                <h2>Maç geçmişi ve fikstür</h2>
+                <p>Takımın tamamlanan maçları ve programdaki karşılaşmalar</p>
+            </div>
+
+            @if (!matches.Any())
+            {
+                <div class="empty-matches">
+                    Bu takım için maç kaydı bulunamadı.
+                </div>
+            }
+            else
+            {
+                <div class="team-table-wrap">
+                    <table class="team-table">
+                        <thead>
+                            <tr>
+                                <th>Hafta</th>
+                                <th>Tarih</th>
+                                <th>Ev sahibi</th>
+                                <th>Skor</th>
+                                <th>Deplasman</th>
+                                <th>Durum</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            @foreach (var match in matches
+                                                    .OrderByDescending(m => m.MatchDate)
+                                                    .ThenByDescending(m => m.MatchId))
+                            {
+                                <tr>
+                                    <td>@match.Week</td>
+                                    <td>@match.MatchDate.ToString("dd.MM.yyyy")</td>
+
+                                    <td>
+                                        @(match.HomeTeam?.Name
+                                                                        ?? (match.HomeTeamId == Model.TeamId ? Model.Name : "Ev sahibi"))
+                                                                                                                                     </td>
+
+                                    <td>
+                                        <span class="match-score">
+                                            @(match.HomeScore?.ToString() ?? "—")
+                                            -
+                                            @(match.AwayScore?.ToString() ?? "—")
+                                        </span>
+                                    </td>
+
+                                    <td>
+                                        @(match.AwayTeam?.Name
+                                                                        ?? (match.AwayTeamId == Model.TeamId ? Model.Name : "Deplasman"))
+                            </td>
+
+                                    <td class="match-status">@match.Status</td>
+                                </tr>
+                                                }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+    </div>
+</main>
+```

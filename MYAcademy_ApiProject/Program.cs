@@ -1,19 +1,31 @@
+
 using MYAcademy_ApiProject.Context;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
+// Veritabaný baðlantýsý
 builder.Services.AddDbContext<ApiContext>();
 
+// CORS ayarlarý
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("WebUI", policy =>
+    {
+        policy
+            .WithOrigins("https://localhost:7118")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
+// Controller ve Swagger
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Swagger
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -21,6 +33,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// CORS, controller endpointlerinden önce çalýþmalý
+app.UseCors("WebUI");
 
 app.UseAuthorization();
 

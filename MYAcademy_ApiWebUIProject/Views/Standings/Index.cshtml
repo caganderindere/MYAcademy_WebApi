@@ -1,0 +1,663 @@
+﻿@model List<SerieA.WebUI.ViewModels.StandingViewModel>
+
+@{
+    ViewData["Title"] = "Serie A Puan Durumu";
+
+    var teams = Model ?? new List<SerieA.WebUI.ViewModels.StandingViewModel>();
+    var leader = teams.OrderByDescending(x => x.Puan)
+        .ThenByDescending(x => x.AV)
+        .ThenByDescending(x => x.AG)
+        .FirstOrDefault();
+
+    var highestScoring = teams.OrderByDescending(x => x.AG).FirstOrDefault();
+    var lowestScoring = teams.OrderByDescending(x => x.YG).FirstOrDefault();
+    var totalGoals = teams.Sum(x => x.AG);
+
+    var maxPoints = teams.Any() ? Math.Max(teams.Max(x => x.Puan), 1) : 1;
+}
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+
+<style>
+    .standings-page {
+        --bg: #070F1F;
+        --bg2: #0B1730;
+        --surface: #0F1D38;
+        --surface2: #142647;
+        --line: #1F3358;
+        --text: #E9F0FB;
+        --muted: #8B9CC0;
+        --blue: #2E7BFF;
+        --green: #1FC98A;
+        --red: #F2475C;
+        min-height: 100vh;
+        margin: -1.5rem;
+        padding: 32px 20px 60px;
+        color: var(--text);
+        background: radial-gradient(1100px 480px at 12% -8%, rgba(46,123,255,.20), transparent 62%), var(--bg);
+        font-family: "Barlow", sans-serif;
+    }
+
+    .standings-shell {
+        width: 100%;
+        max-width: 1450px;
+        margin: auto;
+    }
+
+    .standings-hero {
+        position: relative;
+        overflow: hidden;
+        padding: 30px 32px 25px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: linear-gradient(160deg,#112552,#0B1834 60%,#09142A);
+    }
+
+        .standings-hero::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient( 90deg,rgba(255,255,255,.022) 0 72px,transparent 72px 144px);
+        }
+
+    .hero-top, .hero-meta, .hero-league, .stat-grid,
+    .table-toolbar, .toolbar-controls, .team-cell {
+        display: flex;
+        align-items: center;
+    }
+
+    .hero-top {
+        position: relative;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 24px;
+    }
+
+    .hero-league {
+        gap: 10px;
+        margin-bottom: 12px;
+        color: var(--muted);
+    }
+
+    .league-mark {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        background: var(--blue);
+        color: white;
+        font-weight: 700;
+    }
+
+    .hero-title {
+        margin: 0;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: clamp(2.5rem,5vw,4rem);
+        font-weight: 700;
+        line-height: 1;
+    }
+
+    .hero-subtitle {
+        margin: 12px 0 0;
+        color: var(--muted);
+    }
+
+    .hero-meta {
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 0;
+    }
+
+        .hero-meta > div {
+            min-width: 100px;
+            padding: 12px 16px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: rgba(255,255,255,.035);
+        }
+
+        .hero-meta dt {
+            color: var(--muted);
+            font-size: .8rem;
+            font-weight: 500;
+        }
+
+        .hero-meta dd {
+            margin: 0;
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.7rem;
+            font-weight: 700;
+        }
+
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3,minmax(0,1fr));
+        gap: 14px;
+        margin-top: 20px;
+    }
+
+    .stat-card {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+    }
+
+    .stat-label {
+        color: var(--muted);
+        font-size: .85rem;
+    }
+
+    .stat-name {
+        margin-top: 5px;
+        font-weight: 700;
+        font-size: 1.1rem;
+    }
+
+    .stat-note {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: .8rem;
+    }
+
+    .stat-value {
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 2rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .standings-body {
+        margin-top: 20px;
+    }
+
+    .table-panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--surface);
+    }
+
+    .table-toolbar {
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--line);
+    }
+
+        .table-toolbar h2 {
+            margin: 0;
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+    .toolbar-controls {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .zone-filter {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .zone-chip {
+        padding: 7px 12px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: .84rem;
+        cursor: pointer;
+    }
+
+        .zone-chip:hover,
+        .zone-chip[aria-pressed="true"] {
+            border-color: var(--blue);
+            background: rgba(46,123,255,.14);
+            color: white;
+        }
+
+    .team-search input {
+        width: 185px;
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        outline: none;
+        background: var(--bg2);
+        color: white;
+    }
+
+        .team-search input:focus {
+            border-color: var(--blue);
+        }
+
+        .team-search input::placeholder {
+            color: var(--muted);
+        }
+
+    .standings-table-wrap {
+        overflow-x: auto;
+    }
+
+    .standings-table {
+        width: 100%;
+        min-width: 720px;
+        border-collapse: collapse;
+    }
+
+        .standings-table th {
+            padding: 13px 10px;
+            border-bottom: 1px solid var(--line);
+            color: var(--muted);
+            font-size: .8rem;
+            font-weight: 600;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .standings-table td {
+            padding: 14px 10px;
+            border-bottom: 1px solid rgba(31,51,88,.6);
+            color: #C4D0E6;
+            text-align: center;
+        }
+
+        .standings-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .standings-table tbody tr:hover td {
+            background: rgba(91,155,255,.07);
+        }
+
+        .standings-table .col-pos {
+            width: 55px;
+            color: white;
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+    .team-cell {
+        gap: 10px;
+        text-align: left;
+    }
+
+    .team-name {
+        color: white;
+        font-weight: 600;
+    }
+
+    .team-crest {
+        display: grid;
+        place-items: center;
+        flex: none;
+        width: 32px;
+        height: 32px;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 50%;
+        background: #142647;
+        color: #A9BCDF;
+        font-size: .68rem;
+        font-weight: 700;
+    }
+
+    .gd-positive {
+        color: var(--green) !important;
+        font-weight: 700;
+    }
+
+    .gd-negative {
+        color: var(--red) !important;
+        font-weight: 700;
+    }
+
+    .standings-table .col-pts {
+        background: rgba(46,123,255,.10);
+        color: white;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.4rem;
+        font-weight: 700;
+    }
+
+    .position-ucl .col-pos {
+        box-shadow: inset 4px 0 var(--blue);
+    }
+
+    .position-europe .col-pos {
+        box-shadow: inset 4px 0 var(--green);
+    }
+
+    .position-relegation .col-pos {
+        box-shadow: inset 4px 0 var(--red);
+    }
+
+    .table-foot {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 13px 20px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: .82rem;
+    }
+
+    .side-card {
+        margin-top: 16px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: linear-gradient(180deg,var(--surface2),var(--surface));
+    }
+
+        .side-card h3 {
+            margin-bottom: 12px;
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.35rem;
+        }
+
+    .legend-list {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+        .legend-list li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+    .legend-mark {
+        width: 4px;
+        height: 28px;
+        border-radius: 4px;
+    }
+
+    .legend-list small {
+        display: block;
+        color: var(--muted);
+    }
+
+    .empty-state {
+        padding: 35px;
+        color: var(--muted);
+        text-align: center;
+    }
+
+    @@media (max-width: 850px) {
+        .standings-page {
+            margin: -1rem;
+            padding: 18px 10px 40px;
+        }
+
+        .standings-hero {
+            padding: 22px 18px;
+        }
+
+        .stat-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .table-toolbar {
+            align-items: flex-start;
+        }
+
+        .toolbar-controls {
+            width: 100%;
+            align-items: flex-start;
+        }
+
+        .team-search, .team-search input {
+            width: 100%;
+        }
+    }
+</style>
+
+<main class="standings-page">
+    <div class="standings-shell">
+
+        <header class="standings-hero">
+            <div class="hero-top">
+                <div>
+                    <div class="hero-league">
+                        <span class="league-mark">SA</span>
+                        İtalya, Serie A
+                    </div>
+                    <h1 class="hero-title">Serie A Puan Durumu</h1>
+                    <p class="hero-subtitle">
+                        Tamamlanan maçlara göre güncel sıralama ve takım istatistikleri.
+                    </p>
+                </div>
+
+                <dl class="hero-meta">
+                    <div>
+                        <dt>Sezon</dt>
+                        <dd>2026/27</dd>
+                    </div>
+                    <div>
+                        <dt>Hafta</dt>
+                        <dd>3</dd>
+                    </div>
+                    <div>
+                        <dt>Takım</dt>
+                        <dd>@teams.Count</dd>
+                    </div>
+                </dl>
+            </div>
+        </header>
+
+        <section class="stat-grid">
+            <article class="stat-card">
+                <div>
+                    <div class="stat-label">Lider takım</div>
+                    <div class="stat-name">@(leader?.Team ?? "—")</div>
+                    <div class="stat-note">En yüksek puana sahip takım</div>
+                </div>
+                <div class="stat-value">@(leader?.Puan ?? 0)<small>puan</small></div>
+            </article>
+
+            <article class="stat-card">
+                <div>
+                    <div class="stat-label">En çok gol atan</div>
+                    <div class="stat-name">@(highestScoring?.Team ?? "—")</div>
+                    <div class="stat-note">Takımın attığı toplam gol</div>
+                </div>
+                <div class="stat-value">@(highestScoring?.AG ?? 0)<small>gol</small></div>
+            </article>
+
+            <article class="stat-card">
+                <div>
+                    <div class="stat-label">Toplam atılan gol</div>
+                    <div class="stat-name">Lig geneli</div>
+                    <div class="stat-note">Takımların attığı gollerin toplamı</div>
+                </div>
+                <div class="stat-value">@totalGoals<small>gol</small></div>
+            </article>
+        </section>
+
+        <div class="standings-body">
+            <section class="table-panel">
+                <div class="table-toolbar">
+                    <h2>Genel sıralama</h2>
+
+                    <div class="toolbar-controls">
+                        <div class="zone-filter">
+                            <button type="button" class="zone-chip"
+                                    data-zone="all" aria-pressed="true">
+                                Tümü
+                            </button>
+                            <button type="button" class="zone-chip"
+                                    data-zone="ucl" aria-pressed="false">
+                                İlk 4
+                            </button>
+                            <button type="button" class="zone-chip"
+                                    data-zone="europe" aria-pressed="false">
+                                5–6. sıra
+                            </button>
+                            <button type="button" class="zone-chip"
+                                    data-zone="relegation" aria-pressed="false">
+                                Son 3
+                            </button>
+                        </div>
+
+                        <label class="team-search">
+                            <input id="teamSearch" type="search"
+                                   placeholder="Takım ara..." autocomplete="off">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="standings-table-wrap">
+                    <table class="standings-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th style="text-align:left">Takım</th>
+                                <th>O</th>
+                                <th>G</th>
+                                <th>B</th>
+                                <th>M</th>
+                                <th>AG</th>
+                                <th>YG</th>
+                                <th>AV</th>
+                                <th>P</th>
+                            </tr>
+                        </thead>
+                        <tbody id="standingsRows">
+                            @if (!teams.Any())
+                            {
+                                <tr>
+                                    <td colspan="10" class="empty-state">
+                                        Puan durumu verisi bulunamadı.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @for (int i = 0; i < teams.Count; i++)
+                                {
+                                    var team = teams[i];
+                                    var zone = i < 4 ? "ucl"
+                                    : i < 6 ? "europe"
+                                    : i >= teams.Count - 3 ? "relegation" : "other";
+
+                                    <tr class="standing-row position-@zone"
+                                        data-team="@team.Team"
+                                        data-zone="@zone">
+                                        <td class="col-pos">@(i + 1)</td>
+                                        <td>
+                                            <div class="team-cell">
+                                                <span class="team-crest">
+                                                    @(string.IsNullOrWhiteSpace(team.Team)
+                                                                                                ? "?"
+                                                                                                : team.Team.Substring(0, Math.Min(3, team.Team.Length)).ToUpper())
+                                        </span>
+                                        <span class="team-name">@team.Team</span>
+                                    </div>
+                                </td>
+                                <td>@team.O</td>
+                                <td>@team.G</td>
+                                <td>@team.B</td>
+                                <td>@team.M</td>
+                                <td>@team.AG</td>
+                                <td>@team.YG</td>
+                                <td class="@(team.AV > 0 ? "gd-positive" : team.AV < 0 ? "gd-negative" : "")">
+                                    @(team.AV > 0 ? "+" : "")@team.AV
+                                </td>
+                                <td class="col-pts">@team.Puan</td>
+                            </tr>
+                                                        }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="table-foot">
+                    <span>Gösterilen takım: <strong id="visibleCount">@teams.Count</strong></span>
+                    <span>Sıralama: puan → averaj → atılan gol</span>
+                </div>
+            </section>
+
+            <aside class="side-card">
+                <h3>Sıralama bölgeleri</h3>
+                <ul class="legend-list">
+                    <li>
+                        <span class="legend-mark" style="background:#2E7BFF"></span>
+                        <div><strong>İlk 4 sıra</strong><small>Şampiyonlar Ligi filtresi</small></div>
+                    </li>
+                    <li>
+                        <span class="legend-mark" style="background:#1FC98A"></span>
+                        <div><strong>5–6. sıralar</strong><small>Avrupa filtresi</small></div>
+                    </li>
+                    <li>
+                        <span class="legend-mark" style="background:#F2475C"></span>
+                        <div><strong>Son 3 sıra</strong><small>Düşme hattı filtresi</small></div>
+                    </li>
+                </ul>
+                <hr style="border-color:#1F3358;margin:18px 0">
+                <p style="color:#8B9CC0;margin:0">
+                    Puan eşitliğinde önce averaj, averaj da eşitse atılan gol sayısı dikkate alınır.
+                </p>
+            </aside>
+        </div>
+    </div>
+</main>
+
+<script>
+    (() => {
+        const rows = [...document.querySelectorAll(".standing-row")];
+        const search = document.getElementById("teamSearch");
+        const counter = document.getElementById("visibleCount");
+        const buttons = [...document.querySelectorAll("[data-zone]")];
+
+        let activeZone = "all";
+
+        function filterRows() {
+            const query = (search?.value || "").trim().toLocaleLowerCase("tr-TR");
+            let visible = 0;
+
+            rows.forEach(row => {
+                const team = (row.dataset.team || "").toLocaleLowerCase("tr-TR");
+                const zone = row.dataset.zone;
+                const zoneMatches = activeZone === "all" || zone === activeZone;
+                const searchMatches = team.includes(query);
+
+                row.hidden = !(zoneMatches && searchMatches);
+                if (!row.hidden) visible++;
+            });
+
+            if (counter) counter.textContent = visible;
+        }
+
+        buttons.forEach(button => {
+            button.addEventListener("click", () => {
+                activeZone = button.dataset.zone;
+
+                buttons.forEach(item =>
+                    item.setAttribute("aria-pressed",
+                        String(item === button)));
+
+                filterRows();
+            });
+        });
+
+        search?.addEventListener("input", filterRows);
+    })();
+</script>
