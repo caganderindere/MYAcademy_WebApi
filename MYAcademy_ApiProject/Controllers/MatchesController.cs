@@ -58,6 +58,9 @@ namespace MYAcademy_ApiProject.Controllers
                 HomeTeam = value.HomeTeam.Name,
                 AwayTeam = value.AwayTeam.Name,
 
+                HomeTeamLogoUrl = value.HomeTeam.LogoUrl,
+                AwayTeamLogoUrl = value.AwayTeam.LogoUrl,
+
                 HomeScore = value.HomeScore,
                 AwayScore = value.AwayScore,
 
@@ -93,16 +96,85 @@ namespace MYAcademy_ApiProject.Controllers
         }
 
         // GET: api/Matches/Week/1
+        // Fikstür sayfası için: maçlar + gol / kart / oyuncu değişikliği olayları.
+        // Entity'ler doğrudan döndürülmüyor (Match <-> MatchGoal döngüsü JSON hatası verir),
+        // bu yüzden DTO'ya projeksiyon yapılıyor.
         [HttpGet("Week/{week}")]
         public IActionResult GetMatchesByWeek(int week)
         {
-            var values = _context.Matches
+            var matches = _context.Matches
                 .Where(x => x.Week == week)
                 .Include(x => x.HomeTeam)
                 .Include(x => x.AwayTeam)
+                .Include(x => x.MatchGoals).ThenInclude(g => g.Team)
+                .Include(x => x.MatchCards).ThenInclude(c => c.Team)
+                .Include(x => x.MatchSubstitutions).ThenInclude(s => s.Team)
+                .AsSplitQuery()
                 .ToList();
 
-            return Ok(values);
+            var result = matches
+                .OrderBy(x => x.MatchDate)
+                .ThenBy(x => x.Time)
+                .Select(x => new
+                {
+                    x.MatchId,
+                    x.Week,
+                    x.Status,
+                    x.HomeTeamId,
+                    x.AwayTeamId,
+                    x.MatchDate,
+                    x.Time,
+                    x.Stadium,
+                    x.HomeScore,
+                    x.AwayScore,
+
+                    HomeTeam = new
+                    {
+                        x.HomeTeam!.TeamId,
+                        x.HomeTeam.Name,
+                        x.HomeTeam.ShortName,
+                        x.HomeTeam.LogoUrl
+                    },
+                    AwayTeam = new
+                    {
+                        x.AwayTeam!.TeamId,
+                        x.AwayTeam.Name,
+                        x.AwayTeam.ShortName,
+                        x.AwayTeam.LogoUrl
+                    },
+
+                    Goals = x.MatchGoals
+                        .OrderBy(g => g.Minute)
+                        .Select(g => new MatchGoalDto
+                        {
+                            PlayerName = g.PlayerName,
+                            Minute = g.Minute,
+                            Team = g.Team.Name
+                        }).ToList(),
+
+                    Cards = x.MatchCards
+                        .OrderBy(c => c.Minute)
+                        .Select(c => new MatchCardDto
+                        {
+                            PlayerName = c.PlayerName,
+                            Minute = c.Minute,
+                            CardType = c.CardType,
+                            Team = c.Team.Name
+                        }).ToList(),
+
+                    Substitutions = x.MatchSubstitutions
+                        .OrderBy(s => s.Minute)
+                        .Select(s => new MatchSubstitutionDto
+                        {
+                            PlayerOut = s.PlayerOut,
+                            PlayerIn = s.PlayerIn,
+                            Minute = s.Minute,
+                            Team = s.Team.Name
+                        }).ToList()
+                })
+                .ToList();
+
+            return Ok(result);
         }
 
         // POST: api/Matches

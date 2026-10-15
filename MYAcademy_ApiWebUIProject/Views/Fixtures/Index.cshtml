@@ -1,1426 +1,2335 @@
-﻿```cshtml
-@model List<MYAcademy_ApiWebUIProject.Controllers.MatchDto>
-@using System.Linq
+﻿@model MYAcademy_ApiWebUIProject.Controllers.FixturesPageViewModel
+@using MYAcademy_ApiWebUIProject.Controllers
 @using System.Globalization
 @using System.Text.Json
 
 @{
-    ViewData["Title"] = "Serie A | Futbol Merkezi";
+    ViewData["Title"] = "Fikstür | Matchday Serie A";
 
-    var matches = Model ?? new List<MYAcademy_ApiWebUIProject.Controllers.MatchDto>();
-    var selectedWeek = matches.FirstOrDefault()?.Week ?? 1;
+    var week = Model.Week;
+    var inv = CultureInfo.InvariantCulture;
+    var tr = new CultureInfo("tr-TR");
 
-    if (int.TryParse(Context.Request.Query["week"], out var requestedWeek))
-        selectedWeek = Math.Clamp(requestedWeek, 1, 38);
-
-    var completed = matches
-        .Where(m => m.HomeScore.HasValue && m.AwayScore.HasValue)
-        .ToList();
-
-    var pending = matches.Count - completed.Count;
-    var totalGoals = completed.Sum(m =>
-        m.HomeScore.GetValueOrDefault() + m.AwayScore.GetValueOrDefault());
-
-    var homeWins = completed.Count(m => m.HomeScore > m.AwayScore);
-    var draws = completed.Count(m => m.HomeScore == m.AwayScore);
-    var awayWins = completed.Count(m => m.AwayScore > m.HomeScore);
-
-    var homeGoals = completed.Sum(m => m.HomeScore.GetValueOrDefault());
-    var awayGoals = completed.Sum(m => m.AwayScore.GetValueOrDefault());
-
-    var averageGoals = completed.Count == 0
-        ? 0
-        : totalGoals / (double)completed.Count;
-
-    var teams = matches
-        .SelectMany(m => new[] { m.HomeTeam?.Name, m.AwayTeam?.Name })
-        .Where(n => !string.IsNullOrWhiteSpace(n))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToList();
-
-    var teamStats = teams.Select(team => new
+    string GetStatusClass(string status)
     {
-        Name = team!,
-        Goals = completed.Sum(m =>
-            (string.Equals(m.HomeTeam?.Name, team, StringComparison.OrdinalIgnoreCase)
-                ? m.HomeScore.GetValueOrDefault() : 0)
-            +
-            (string.Equals(m.AwayTeam?.Name, team, StringComparison.OrdinalIgnoreCase)
-                ? m.AwayScore.GetValueOrDefault() : 0))
-    })
-    .OrderByDescending(x => x.Goals)
-    .ThenBy(x => x.Name)
-    .ToList();
-
-    var chartTeams = teamStats.Take(10).ToList();
-    var teamLabels = chartTeams.Select(x => x.Name).ToArray();
-    var teamGoals = chartTeams.Select(x => x.Goals).ToArray();
-
-    var outcomeLabels = new[]
+        if (string.IsNullOrWhiteSpace(status)) return "upcoming";
+        if (status.Contains("Tamam", StringComparison.OrdinalIgnoreCase)) return "finished";
+        if (status.Contains("Devam", StringComparison.OrdinalIgnoreCase)) return "live";
+        return "upcoming";
+    }
+    string GetStatusText(string status)
     {
-        "Ev sahibi galibiyeti",
-        "Beraberlik",
-        "Deplasman galibiyeti"
-    };
+        if (string.IsNullOrWhiteSpace(status)) return "BAŞLAMADI";
+        if (status.Contains("Tamam", StringComparison.OrdinalIgnoreCase)) return "MAÇ SONU";
+        return status.ToUpper(tr);
+    }
+    string Init(string n) => string.IsNullOrWhiteSpace(n) ? "?" : n.Trim().Substring(0, 1).ToUpper(tr);
+    string TShort(string s, string n) => string.IsNullOrWhiteSpace(s) ? n : s;
+    string Num(double v) => v.ToString("0.##", inv);
+    string ToJson(object o) => JsonSerializer.Serialize(o);
+    bool IsYellow(string t) => (t ?? "").Contains("Sarı", StringComparison.OrdinalIgnoreCase) || (t ?? "").Contains("Yellow", StringComparison.OrdinalIgnoreCase);
+    bool IsRed(string t) => (t ?? "").Contains("Kırmızı", StringComparison.OrdinalIgnoreCase) || (t ?? "").Contains("Red", StringComparison.OrdinalIgnoreCase);
 
-    var outcomeValues = new[] { homeWins, draws, awayWins };
+    // ---------- Maç verileri ----------
+    var ms = Model.Matches ?? new List<MatchDto>();
+    var hasMatches = ms.Any();
+    var played = ms.Where(m => m.HomeScore.HasValue && m.AwayScore.HasValue).ToList();
+    var playedCount = played.Count;
+    var homeW = played.Count(m => m.HomeScore > m.AwayScore);
+    var drawN = played.Count(m => m.HomeScore == m.AwayScore);
+    var awayW = played.Count(m => m.HomeScore < m.AwayScore);
+    var homeGoalsSum = played.Sum(m => m.HomeScore ?? 0);
+    var awayGoalsSum = played.Sum(m => m.AwayScore ?? 0);
+    var goalsSum = homeGoalsSum + awayGoalsSum;
+    var avgGoals = playedCount > 0 ? (double)goalsSum / playedCount : 0;
+    var homeGoalPct = goalsSum > 0 ? homeGoalsSum * 100.0 / goalsSum : 50;
+    var topMatch = played.OrderByDescending(m => (m.HomeScore ?? 0) + (m.AwayScore ?? 0)).FirstOrDefault();
+    var liveCount = ms.Count(m => GetStatusClass(m.Status) == "live");
+    var days = ms.GroupBy(m => m.MatchDate.Date).OrderBy(g => g.Key).ToList();
 
-    var matchIds = completed
-        .Select(m => m.MatchId)
-        .Distinct()
-        .ToArray();
+    // ---------- Olay verileri (gol / kart / değişiklik) ----------
+    var goalEvents = ms.SelectMany(m => (m.Goals ?? new List<GoalEventDto>()).Select(g => new { g.PlayerName, g.Minute, g.Team, Match = m })).ToList();
+    var cardEvents = ms.SelectMany(m => (m.Cards ?? new List<CardEventDto>())).ToList();
+    var subCount = ms.Sum(m => (m.Substitutions ?? new List<SubEventDto>()).Count);
+    var yellowCount = cardEvents.Count(c => IsYellow(c.CardType));
+    var redCount = cardEvents.Count(c => IsRed(c.CardType));
+
+    var scorers = goalEvents.Where(g => !string.IsNullOrWhiteSpace(g.PlayerName))
+        .GroupBy(g => new { g.PlayerName, g.Team })
+        .Select(g => new { Name = g.Key.PlayerName, Team = g.Key.Team, Count = g.Count() })
+        .OrderByDescending(x => x.Count).ThenBy(x => x.Name).Take(6).ToList();
+    var topScorer = scorers.FirstOrDefault();
+    var earliestGoal = goalEvents.OrderBy(g => g.Minute).FirstOrDefault();
+    var latestGoal = goalEvents.OrderByDescending(g => g.Minute).FirstOrDefault();
+    var firstHalfGoals = goalEvents.Count(g => g.Minute <= 45);
+    var secondHalfGoals = goalEvents.Count - firstHalfGoals;
+
+    var minBuckets = new int[6];
+    foreach (var g in goalEvents) minBuckets[Math.Min(5, Math.Max(0, (g.Minute - 1) / 15))]++;
+    var minLabels = new[] { "1-15", "16-30", "31-45", "46-60", "61-75", "76-90+" };
+
+    var teamCards = cardEvents.Where(c => !string.IsNullOrWhiteSpace(c.Team))
+        .GroupBy(c => c.Team)
+        .Select(g => new { Team = g.Key, Y = g.Count(c => IsYellow(c.CardType)), R = g.Count(c => IsRed(c.CardType)) })
+        .OrderByDescending(x => x.Y + x.R).Take(8).ToList();
+
+    // ---------- Grafik verileri ----------
+    var goalLabels = played.Select(m => TShort(m.HomeTeam.ShortName, m.HomeTeam.Name) + " - " + TShort(m.AwayTeam.ShortName, m.AwayTeam.Name)).ToList();
+    var goalValues = played.Select(m => (m.HomeScore ?? 0) + (m.AwayScore ?? 0)).ToList();
+    var goalColors = played.Select(m => m.HomeScore > m.AwayScore ? "#b8ff3b" : (m.HomeScore < m.AwayScore ? "#43e0a0" : "#ffd166")).ToList();
+
+    var stAll = Model.Standings ?? new List<SerieA.WebUI.ViewModels.StandingViewModel>();
+    var hasStandings = stAll.Any();
+    var top10 = stAll.Take(10).ToList();
+    var maxPts = hasStandings ? Math.Max(1, stAll.Max(x => x.Puan)) : 1;
+    var stCount = stAll.Count;
+    var stLabels = top10.Select(x => x.Team).ToList();
+    var stPoints = top10.Select(x => x.Puan).ToList();
+
+    var teams = Model.Teams ?? new List<TeamDto>();
+    var chipFrom = Math.Max(1, week - 3);
+    var chipTo = Math.Min(38, week + 3);
 }
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
 
 <style>
     :root {
-        --bg: #0b1120;
-        --panel: #121c2e;
-        --panel-light: #17243a;
-        --border: #26364e;
-        --text: #edf3fc;
-        --muted: #8fa2bf;
-        --blue: #5794ff;
-        --cyan: #45d5d1;
-        --green: #42d6a4;
-        --red: #ff7187;
-        --yellow: #f6c768;
+        --bg: #06110e;
+        --panel-2: #0d2118;
+        --line: #244638;
+        --text: #f2f8f3;
+        --muted: #91ad9d;
+        --lime: #b8ff3b;
+        --mint: #43e0a0;
+        --amber: #ffd166;
+        --red: #ff5964;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    html, body {
+        overflow-x: hidden;
     }
 
     body {
         background: var(--bg) !important;
         color: var(--text);
-        font-family: Inter, sans-serif;
+        font-family: "Barlow", sans-serif;
     }
 
-    .football-page {
+    a {
+        text-decoration: none;
+    }
+
+    .fx-page {
+        position: relative;
+        isolation: isolate;
+        width: 100vw;
+        margin-left: calc(50% - 50vw);
         min-height: 100vh;
-        padding: 24px 0 55px;
-        background: radial-gradient(ellipse at 5% 0%, rgba(63, 111, 204, .15), transparent 38%), var(--bg);
+        padding: 0 0 70px;
+        background: radial-gradient(ellipse at 50% -12%, rgba(113,255,83,.14), transparent 48%), radial-gradient(ellipse at 100% 40%, rgba(67,224,160,.07), transparent 35%), var(--bg);
     }
 
-    .football-shell {
-        width: min(1240px, calc(100% - 32px));
+        .fx-page::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            opacity: .14;
+            background-image: linear-gradient(rgba(184,255,59,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(184,255,59,.08) 1px, transparent 1px);
+            background-size: 48px 48px;
+            mask-image: linear-gradient(to bottom, black, transparent 70%);
+        }
+
+    .fx-shell {
+        width: min(1320px, calc(100% - 36px));
         margin: auto;
     }
 
-    .hero {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 24px;
-        padding: 28px 30px;
-        border: 1px solid #2c4261;
-        border-radius: 20px;
-        background: linear-gradient(115deg, #172b49, #111c30 70%);
+    /* ===== INTRO ===== */
+    .fx-intro {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background: radial-gradient(ellipse at center, #0a2417 0%, #040b08 70%);
+        transition: opacity .7s ease, visibility .7s ease;
     }
 
-    .brand {
+        .fx-intro.out {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+    .fx-intro-pitch {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+        .fx-intro-pitch .ln {
+            fill: none;
+            stroke: rgba(184,255,59,.28);
+            stroke-width: 2;
+            stroke-dasharray: 1;
+            stroke-dashoffset: 1;
+            animation: fx-draw 1.6s ease forwards;
+        }
+
+            .fx-intro-pitch .ln:nth-child(2) {
+                animation-delay: .15s;
+            }
+
+            .fx-intro-pitch .ln:nth-child(3) {
+                animation-delay: .3s;
+            }
+
+            .fx-intro-pitch .ln:nth-child(4) {
+                animation-delay: .45s;
+            }
+
+            .fx-intro-pitch .ln:nth-child(5) {
+                animation-delay: .6s;
+            }
+
+            .fx-intro-pitch .ln:nth-child(6) {
+                animation-delay: .75s;
+            }
+
+    .fx-intro-core {
+        position: relative;
+        z-index: 2;
+        text-align: center;
+        padding: 0 20px;
+    }
+
+    .fx-intro-ball {
+        font-size: 3.6rem;
+        filter: drop-shadow(0 0 28px rgba(184,255,59,.35));
+        animation: fx-ball 1.1s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .fx-intro-kicker {
+        margin-top: 10px;
+        color: #b8ff83;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .34em;
+        opacity: 0;
+        animation: fx-fade .6s .5s forwards;
+    }
+
+    .fx-intro-title {
+        display: flex;
+        justify-content: center;
+        margin-top: 4px;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: clamp(3.6rem, 13vw, 9rem);
+        font-weight: 800;
+        letter-spacing: -.04em;
+        line-height: .95;
+    }
+
+        .fx-intro-title span {
+            display: inline-block;
+            opacity: 0;
+            transform: translateY(40px) skewY(8deg);
+            animation: fx-letter .7s cubic-bezier(.2,.8,.2,1) forwards;
+            animation-delay: calc(.45s + var(--i) * .07s);
+        }
+
+            .fx-intro-title span:nth-child(n+6) {
+                color: var(--lime);
+                text-shadow: 0 0 40px rgba(184,255,59,.35);
+            }
+
+    .fx-intro-sub {
+        margin-top: 14px;
+        color: #8eaa98;
+        font-size: .72rem;
+        letter-spacing: .26em;
+        opacity: 0;
+        animation: fx-fade .6s 1.2s forwards;
+    }
+
+    .fx-intro-bar {
+        width: 200px;
+        height: 3px;
+        margin: 24px auto 0;
+        overflow: hidden;
+        background: #1a3024;
+        border-radius: 3px;
+    }
+
+        .fx-intro-bar i {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--lime), var(--mint));
+            box-shadow: 0 0 14px var(--lime);
+            transform: scaleX(0);
+            transform-origin: left;
+            animation: fx-load 2.3s .2s ease forwards;
+        }
+
+    .fx-intro-skip {
+        position: absolute;
+        right: 22px;
+        bottom: 22px;
+        z-index: 3;
+        padding: 8px 14px;
+        border: 1px solid rgba(184,255,59,.3);
+        border-radius: 999px;
+        background: rgba(3,13,8,.6);
+        color: #c9ff83;
+        font: inherit;
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .14em;
+        cursor: pointer;
+    }
+
+    /* ===== ÜST BAR (maçkolik havası) ===== */
+    .mk-bar {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        border-bottom: 1px solid #1d3a2c;
+        background: rgba(5,16,12,.92);
+        backdrop-filter: blur(12px);
+    }
+
+    .mk-bar-in {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        width: min(1320px, calc(100% - 36px));
+        height: 62px;
+        margin: auto;
+    }
+
+    .mk-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #fff;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.7rem;
+        font-weight: 800;
+        letter-spacing: -.02em;
+    }
+
+        .mk-brand span.m {
+            display: grid;
+            place-items: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #c7ff61, #43e0a0);
+            color: #06110e;
+            font-size: 1.2rem;
+            box-shadow: 0 0 22px rgba(184,255,59,.25);
+        }
+
+        .mk-brand b span {
+            color: var(--lime);
+        }
+
+    .mk-nav {
+        display: flex;
+        gap: 4px;
+        margin-left: 10px;
+    }
+
+        .mk-nav a {
+            position: relative;
+            padding: 21px 14px;
+            color: #9fb8a8;
+            font-size: .85rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            transition: color .2s;
+        }
+
+            .mk-nav a:hover {
+                color: #fff;
+            }
+
+            .mk-nav a.active {
+                color: var(--lime);
+            }
+
+                .mk-nav a.active::after {
+                    content: "";
+                    position: absolute;
+                    left: 14px;
+                    right: 14px;
+                    bottom: 0;
+                    height: 3px;
+                    border-radius: 3px 3px 0 0;
+                    background: var(--lime);
+                    box-shadow: 0 0 14px var(--lime);
+                }
+
+    .mk-right {
         display: flex;
         align-items: center;
         gap: 12px;
-        margin-bottom: 22px;
-        color: #b7cae8;
-        font-size: .78rem;
-        font-weight: 700;
+        margin-left: auto;
     }
 
-    .brand-icon {
-        display: grid;
-        place-items: center;
-        width: 42px;
-        height: 42px;
-        border-radius: 13px;
-        background: linear-gradient(135deg, var(--cyan), var(--blue));
-        color: #081324;
-        font-size: 1.5rem;
-        font-weight: 800;
-    }
-
-    .hero h1 {
-        margin: 0;
-        color: white;
-        font-size: clamp(2rem, 4vw, 3.5rem);
-        font-weight: 800;
-        letter-spacing: -.06em;
-        line-height: 1.05;
-    }
-
-        .hero h1 span {
-            color: var(--cyan);
-        }
-
-    .hero p {
-        max-width: 600px;
-        margin: 13px 0 0;
-        color: #a9bddb;
-        font-size: .92rem;
-        line-height: 1.7;
-    }
-
-    .hero-side {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(100px, 1fr));
-        gap: 10px;
-        flex: 0 0 280px;
-    }
-
-    .hero-stat {
-        padding: 15px;
-        border: 1px solid rgba(190, 210, 240, .14);
-        border-radius: 13px;
-        background: rgba(255, 255, 255, .04);
-    }
-
-        .hero-stat strong {
-            display: block;
-            color: white;
-            font-size: 1.8rem;
-            font-weight: 800;
-        }
-
-        .hero-stat span {
-            display: block;
-            margin-top: 5px;
-            color: var(--muted);
-            font-size: .69rem;
-            font-weight: 600;
-        }
-
-    .stats-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 13px;
-        margin-top: 16px;
-    }
-
-    .stat-card {
-        padding: 19px;
-        border: 1px solid var(--border);
-        border-radius: 15px;
-        background: var(--panel);
-    }
-
-    .stat-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-    }
-
-    .stat-label {
-        color: var(--muted);
-        font-size: .79rem;
-        font-weight: 600;
-    }
-
-    .stat-icon {
-        display: grid;
-        place-items: center;
-        width: 34px;
-        height: 34px;
-        border-radius: 10px;
-        background: #1d304b;
-        font-size: 1rem;
-    }
-
-    .stat-value {
-        display: block;
-        margin-top: 13px;
-        color: white;
-        font-size: 2rem;
-        font-weight: 800;
-        letter-spacing: -.04em;
-    }
-
-    .stat-note {
-        margin-top: 5px;
-        color: #788ba9;
-        font-size: .72rem;
-    }
-
-    .section {
-        margin-top: 25px;
-    }
-
-    .section-heading {
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        gap: 14px;
-        margin-bottom: 13px;
-    }
-
-    .section-kicker {
-        margin-bottom: 6px;
-        color: var(--cyan);
-        font-size: .68rem;
+    .mk-league {
+        padding: 7px 12px;
+        border: 1px solid #294b39;
+        border-radius: 999px;
+        color: #d7ff9a;
+        font-size: .74rem;
         font-weight: 800;
         letter-spacing: .12em;
     }
 
-    .section-title {
-        margin: 0;
-        color: white;
-        font-size: 1.45rem;
-        font-weight: 800;
-        letter-spacing: -.035em;
-    }
-
-    .section-description {
-        margin: 6px 0 0;
-        color: var(--muted);
-        font-size: .82rem;
-        line-height: 1.6;
-    }
-
-    .pill {
-        flex: 0 0 auto;
-        padding: 8px 11px;
-        border: 1px solid var(--border);
-        border-radius: 9px;
-        background: var(--panel);
-        color: #bfd0e9;
-        font-size: .78rem;
-    }
-
-    .panel {
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: var(--panel);
-    }
-
-    .fixture-controls {
-        padding: 18px;
-    }
-
-    .filter-row {
-        display: flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 9px;
-        margin-bottom: 16px;
-    }
-
-    .field {
-        min-width: 0;
-        padding: 10px 12px;
-        border: 1px solid #304461;
-        border-radius: 9px;
-        outline: none;
-        background: #0b1526;
-        color: white;
-        font: inherit;
-        font-size: .83rem;
-    }
-
-        .field:focus {
-            border-color: var(--cyan);
-            box-shadow: 0 0 0 3px rgba(69, 213, 209, .09);
-        }
-
-    .week-input {
-        width: 100px;
-    }
-
-    .search-input {
-        width: min(260px, 100%);
-    }
-
-    .action-button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 10px 14px;
-        border: 1px solid var(--blue);
-        border-radius: 9px;
-        background: var(--blue);
-        color: white;
-        font: inherit;
-        font-size: .83rem;
-        font-weight: 700;
-        text-decoration: none;
-        cursor: pointer;
-        transition: .18s ease;
-    }
-
-        .action-button:hover {
-            background: #397ce8;
-            color: white;
-        }
-
-    .week-list {
-        display: flex;
-        gap: 7px;
-        overflow-x: auto;
-        padding-bottom: 4px;
-    }
-
-    .week-link {
-        flex: 0 0 auto;
-        min-width: 76px;
-        padding: 10px;
-        border: 1px solid var(--border);
-        border-radius: 9px;
-        background: #0d1829;
-        color: #9cafcb;
-        font-size: .75rem;
+    .mk-clock {
+        min-width: 66px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        background: #0a1f16;
+        color: var(--lime);
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.05rem;
         font-weight: 700;
         text-align: center;
-        text-decoration: none;
+        font-variant-numeric: tabular-nums;
     }
 
-        .week-link:hover {
-            border-color: #4c6d9c;
-            color: white;
-        }
-
-        .week-link.active {
-            border-color: var(--blue);
-            background: var(--blue);
-            color: white;
-        }
-
-    .chart-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
-    }
-
-    .chart-card {
-        min-width: 0;
-        overflow: hidden;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: var(--panel);
-    }
-
-    .chart-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 10px;
-        padding: 19px 19px 0;
-    }
-
-    .chart-title {
-        margin: 0;
-        color: white;
-        font-size: 1rem;
+    .mk-live-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: rgba(255,89,100,.12);
+        border: 1px solid rgba(255,89,100,.4);
+        color: #ff8d96;
+        font-size: .72rem;
         font-weight: 800;
+        letter-spacing: .1em;
     }
 
-    .chart-subtitle {
-        margin: 5px 0 0;
+    .mk-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        animation: fx-pulse 1.1s infinite;
+    }
+
+    /* ===== TAKIM LOGO ŞERİDİ ===== */
+    .tm-strip {
+        margin-top: 18px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: linear-gradient(145deg, #0d2118, #091811);
+    }
+
+    .tm-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 20px 0;
         color: var(--muted);
-        font-size: .76rem;
-        line-height: 1.5;
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .16em;
+        text-transform: uppercase;
     }
 
-    .chart-badge {
+        .tm-head b {
+            color: var(--lime);
+        }
+
+    .tm-row {
+        display: flex;
+        gap: 6px;
+        padding: 12px 14px 16px;
+        overflow-x: auto;
+        scrollbar-width: thin;
+    }
+
+    .tm-item {
         flex: 0 0 auto;
-        padding: 6px 8px;
-        border: 1px solid var(--border);
-        border-radius: 7px;
-        color: #a7bbd9;
-        font-size: .65rem;
-    }
-
-    .chart-wrap {
-        position: relative;
-        height: 300px;
-        padding: 18px;
-    }
-
-    .chart-note {
-        padding: 0 19px 17px;
-        color: #8295b2;
-        font-size: .73rem;
-    }
-
-    .leaders-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
+        justify-items: center;
+        gap: 7px;
+        width: 82px;
+        padding: 10px 6px;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        color: #a5c4b0;
+        transition: .22s;
     }
 
-    .leader-card {
-        overflow: hidden;
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: var(--panel);
-    }
+        .tm-item:hover {
+            transform: translateY(-4px);
+            border-color: #3a6a4c;
+            background: rgba(184,255,59,.06);
+            color: #fff;
+        }
 
-    .leader-header {
-        padding: 17px 18px;
-        border-bottom: 1px solid var(--border);
-    }
+        .tm-item img, .tm-item .cr {
+            width: 46px;
+            height: 46px;
+            object-fit: contain;
+            filter: drop-shadow(0 6px 8px rgba(0,0,0,.4));
+        }
 
-        .leader-header h3 {
-            margin: 0;
-            color: white;
-            font-size: 1rem;
+        .tm-item .cr {
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(184,255,59,.28);
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 20%, #275c3e, #0a2116 72%);
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.3rem;
             font-weight: 800;
         }
 
-        .leader-header p {
-            margin: 5px 0 0;
-            color: var(--muted);
-            font-size: .75rem;
+        .tm-item small {
+            max-width: 74px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: .68rem;
+            font-weight: 700;
+            letter-spacing: .06em;
         }
 
-    .leader-list {
-        padding: 5px 18px;
-    }
-
-    .leader-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 12px 0;
-        border-bottom: 1px solid rgba(38, 54, 78, .75);
-    }
-
-        .leader-row:last-child {
-            border-bottom: 0;
-        }
-
-    .rank {
-        display: grid;
-        place-items: center;
-        flex: 0 0 29px;
-        width: 29px;
-        height: 29px;
-        border-radius: 8px;
-        background: #20314b;
-        color: #c4d4ed;
-        font-size: .8rem;
-        font-weight: 800;
-    }
-
-        .rank.first {
-            background: rgba(246, 199, 104, .14);
-            color: var(--yellow);
-        }
-
-    .player-avatar {
-        display: grid;
-        place-items: center;
-        flex: 0 0 36px;
-        width: 36px;
-        height: 36px;
-        border: 1px solid #304866;
-        border-radius: 50%;
-        background: #1a2c45;
-        color: #dbe9ff;
-        font-weight: 800;
-    }
-
-    .player-info {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .player-name {
-        overflow-wrap: anywhere;
-        color: #edf3fc;
-        font-size: .83rem;
-        font-weight: 700;
-    }
-
-    .player-team {
-        margin-top: 4px;
-        color: var(--muted);
-        font-size: .7rem;
-    }
-
-    .player-value {
-        color: var(--green);
-        font-size: 1.4rem;
-        font-weight: 800;
-    }
-
-        .player-value.card {
-            color: var(--red);
-        }
-
-    .leader-note {
-        padding: 11px 18px;
-        border-top: 1px solid var(--border);
-        color: #8194b0;
-        font-size: .71rem;
-        line-height: 1.55;
-    }
-
-    .match-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 13px;
-    }
-
-    .match-card {
-        min-width: 0;
-        padding: 17px;
-        border: 1px solid var(--border);
-        border-radius: 15px;
-        background: linear-gradient(145deg, #142239, #101a2b);
-        transition: border-color .18s, transform .18s;
-    }
-
-        .match-card:hover {
-            transform: translateY(-2px);
-            border-color: #47658e;
-        }
-
-        .match-card[hidden] {
-            display: none;
-        }
-
-    .match-meta {
+    /* ===== LİG BAŞLIĞI + HAFTA ===== */
+    .lg-head {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 20px;
         flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 20px;
-        color: var(--muted);
-        font-size: .72rem;
+        margin: 20px 0 14px;
     }
 
-    .match-status {
-        padding: 5px 8px;
-        border: 1px solid var(--border);
-        border-radius: 99px;
-        color: #bdcce2;
-        font-size: .64rem;
-        font-weight: 800;
+    .lg-title {
+        display: flex;
+        align-items: center;
+        gap: 14px;
     }
 
-        .match-status.finished {
-            border-color: rgba(66, 214, 164, .25);
-            background: rgba(66, 214, 164, .08);
-            color: var(--green);
+        .lg-title .ic {
+            display: grid;
+            place-items: center;
+            width: 54px;
+            height: 54px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(184,255,59,.2), rgba(67,224,160,.1));
+            border: 1px solid rgba(184,255,59,.3);
+            font-size: 1.6rem;
         }
 
-    .match-teams {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-        align-items: center;
-        gap: 8px;
-    }
+        .lg-title h1 {
+            margin: 0;
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -.01em;
+        }
 
-    .team {
+            .lg-title h1 span {
+                color: var(--lime);
+            }
+
+        .lg-title p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: .85rem;
+        }
+
+    .fx-weeknav {
         display: flex;
         align-items: center;
         gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scrollbar-width: thin;
+    }
+
+    .fx-arrow, .fx-chip {
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        min-width: 44px;
+        height: 44px;
+        padding: 0 14px;
+        border: 1px solid #294b39;
+        border-radius: 12px;
+        background: #071710;
+        color: #a8c4ae;
+        font-weight: 700;
+        transition: .2s;
+    }
+
+        .fx-arrow:hover, .fx-chip:hover {
+            border-color: var(--lime);
+            color: #fff;
+            transform: translateY(-2px);
+        }
+
+        .fx-arrow.disabled {
+            opacity: .3;
+            pointer-events: none;
+        }
+
+        .fx-chip.active {
+            border-color: var(--lime);
+            background: rgba(184,255,59,.14);
+            color: #d7ff9a;
+            box-shadow: 0 0 22px rgba(184,255,59,.12);
+        }
+
+    .fx-ticker {
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 8px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(7,23,16,.8);
+    }
+
+        .fx-ticker::before, .fx-ticker::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 60px;
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        .fx-ticker::before {
+            left: 0;
+            background: linear-gradient(90deg, #071710, transparent);
+        }
+
+        .fx-ticker::after {
+            right: 0;
+            background: linear-gradient(-90deg, #071710, transparent);
+        }
+
+    .fx-track {
+        display: flex;
+        width: max-content;
+        animation: fx-marquee 45s linear infinite;
+    }
+
+    .fx-ticker:hover .fx-track {
+        animation-play-state: paused;
+    }
+
+    .fx-tick {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 26px;
+        border-right: 1px solid rgba(36,70,56,.8);
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.05rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+        .fx-tick b {
+            color: var(--lime);
+            font-size: 1.15rem;
+        }
+
+        .fx-tick em {
+            color: var(--muted);
+            font-style: normal;
+            font-size: .85rem;
+        }
+
+    .fx-error {
+        margin: 0 0 18px;
+        padding: 16px 18px;
+        border: 1px solid rgba(255,89,100,.4);
+        border-radius: 14px;
+        background: rgba(255,89,100,.08);
+        color: #ffb3b9;
+    }
+
+    /* ===== BÖLÜM BAŞLIĞI ===== */
+    .fx-section-title {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 40px 0 16px;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: .02em;
+        scroll-margin-top: 80px;
+    }
+
+        .fx-section-title::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, var(--line), transparent);
+        }
+
+        .fx-section-title span {
+            color: var(--lime);
+        }
+
+    /* ===== KPI ===== */
+    .fx-kpis {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .fx-kpi {
+        position: relative;
+        overflow: hidden;
+        padding: 18px 18px 16px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: linear-gradient(145deg, var(--panel-2), #091811);
+        transition: transform .25s, border-color .25s;
+    }
+
+        .fx-kpi:hover {
+            transform: translateY(-4px);
+            border-color: #5b8b53;
+        }
+
+        .fx-kpi::after {
+            content: "";
+            position: absolute;
+            right: -22px;
+            top: -28px;
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: var(--glow, rgba(184,255,59,.12));
+            filter: blur(4px);
+        }
+
+    .fx-kpi-ico {
+        font-size: 1.2rem;
+    }
+
+    .fx-kpi-label {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: .7rem;
+        font-weight: 700;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+    }
+
+    .fx-kpi-value {
+        display: block;
+        margin-top: 3px;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 2.4rem;
+        font-weight: 800;
+        line-height: 1;
+        color: #f4ffe9;
+    }
+
+    .fx-highlights {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin: 12px 0 16px;
+    }
+
+    .fx-hl {
+        position: relative;
+        overflow: hidden;
+        padding: 18px 20px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: linear-gradient(145deg, #0f261c, #0a1812);
+    }
+
+        .fx-hl small {
+            color: var(--muted);
+            font-size: .7rem;
+            font-weight: 800;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+        }
+
+        .fx-hl strong {
+            display: block;
+            margin-top: 8px;
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.6rem;
+            font-weight: 800;
+            line-height: 1.08;
+            overflow-wrap: anywhere;
+        }
+
+            .fx-hl strong em {
+                color: var(--lime);
+                font-style: normal;
+            }
+
+        .fx-hl p {
+            margin: 6px 0 0;
+            color: #7a9585;
+            font-size: .78rem;
+        }
+
+        .fx-hl .big {
+            position: absolute;
+            right: 12px;
+            bottom: -12px;
+            font-size: 4.2rem;
+            opacity: .06;
+        }
+
+    /* ===== PANEL / GRAFİK ===== */
+    .fx-panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        background: linear-gradient(145deg, #0d2118, #091811);
+        box-shadow: 0 14px 35px rgba(0,0,0,.13);
+    }
+
+    .fx-ph {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--line);
+    }
+
+        .fx-ph h2 {
+            margin: 0;
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.45rem;
+            font-weight: 700;
+            letter-spacing: .02em;
+        }
+
+            .fx-ph h2 i {
+                color: var(--lime);
+                font-style: normal;
+                margin-right: 8px;
+            }
+
+        .fx-ph small {
+            color: var(--muted);
+            font-size: .78rem;
+        }
+
+    .fx-charts {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+    }
+
+        .fx-charts .wide {
+            grid-column: span 2;
+        }
+
+    .fx-chart-wrap {
+        position: relative;
+        height: 280px;
+        padding: 16px 18px 18px;
+    }
+
+        .fx-chart-wrap.tall {
+            height: 340px;
+        }
+
+    .fx-chips {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 0 20px 16px;
+    }
+
+        .fx-chips span {
+            padding: 5px 11px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            color: #b9d3c3;
+            font-size: .74rem;
+            font-weight: 700;
+        }
+
+            .fx-chips span b {
+                color: var(--lime);
+            }
+
+    .fx-empty {
+        padding: 50px 20px;
+        text-align: center;
+        color: var(--muted);
+    }
+
+        .fx-empty .ic {
+            font-size: 2.6rem;
+            opacity: .45;
+            margin-bottom: 8px;
+        }
+
+    .fx-split {
+        padding: 22px;
+    }
+
+    .fx-split-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 8px;
+    }
+
+        .fx-split-row b {
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 2.2rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .fx-split-row span {
+            color: var(--muted);
+            font-size: .8rem;
+        }
+
+    .fx-split-bar {
+        display: flex;
+        gap: 4px;
+        height: 12px;
+        margin-bottom: 18px;
+    }
+
+        .fx-split-bar i {
+            display: block;
+            height: 100%;
+            border-radius: 99px;
+            width: 0;
+            transition: width 1.2s cubic-bezier(.2,.8,.2,1);
+        }
+
+        .fx-split-bar .h {
+            background: linear-gradient(90deg, #b8ff3b, #43e0a0);
+        }
+
+        .fx-split-bar .a {
+            background: linear-gradient(90deg, #328d68, #70d9b0);
+        }
+
+    .fx-split-legend {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: .78rem;
+    }
+
+        .fx-split-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .fx-split-legend i {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+    /* ===== SKOR TABLOSU ===== */
+    .sb-tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 14px 18px 0;
+    }
+
+    .sb-tab {
+        padding: 8px 14px;
+        border: 1px solid #294b39;
+        border-radius: 10px;
+        background: #071710;
+        color: #a8c4ae;
+        font: inherit;
+        font-size: .78rem;
+        font-weight: 800;
+        letter-spacing: .06em;
+        cursor: pointer;
+        transition: .2s;
+    }
+
+        .sb-tab:hover {
+            border-color: var(--lime);
+            color: #fff;
+        }
+
+        .sb-tab.active {
+            border-color: var(--lime);
+            background: rgba(184,255,59,.13);
+            color: #d7ff9a;
+        }
+
+        .sb-tab em {
+            margin-left: 6px;
+            padding: 1px 7px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.07);
+            font-style: normal;
+            font-size: .7rem;
+        }
+
+    .sb-list {
+        padding: 8px 14px 16px;
+    }
+
+    .sb-day {
+        margin: 16px 6px 10px;
+        color: #b8ff83;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.05rem;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+    }
+
+    .sb-row {
+        margin-bottom: 8px;
+        overflow: hidden;
+        border: 1px solid rgba(36,70,56,.9);
+        border-radius: 16px;
+        background: linear-gradient(135deg, #0f261c, #0a1812);
+        transition: border-color .25s, background .25s;
+    }
+
+        .sb-row:hover {
+            border-color: #4f7e55;
+        }
+
+        .sb-row.open {
+            border-color: #5b8b53;
+            background: linear-gradient(135deg, #12301f, #0b1a13);
+        }
+
+        .sb-row.live {
+            border-left: 3px solid var(--red);
+        }
+
+    .sb-main {
+        position: relative;
+        display: grid;
+        grid-template-columns: 84px minmax(0, 1fr) 96px minmax(0, 1fr) 190px 24px;
+        gap: 12px;
+        align-items: center;
+        padding: 14px 18px;
+        cursor: pointer;
+        outline: none;
+    }
+
+        .sb-main:focus-visible {
+            box-shadow: inset 0 0 0 2px var(--lime);
+        }
+
+    .sb-time {
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.45rem;
+        font-weight: 800;
+        color: #d7ff9a;
+        line-height: 1;
+    }
+
+        .sb-time small {
+            display: block;
+            margin-top: 5px;
+            color: var(--muted);
+            font-family: "Barlow", sans-serif;
+            font-size: .66rem;
+            font-weight: 600;
+            letter-spacing: .06em;
+        }
+
+    .sb-team {
+        display: flex;
+        align-items: center;
+        gap: 11px;
         min-width: 0;
     }
 
-        .team.away {
-            flex-direction: row-reverse;
+        .sb-team.home {
+            justify-content: flex-end;
             text-align: right;
         }
 
-    .team-badge {
+        .sb-team .nm {
+            font-family: "Barlow Condensed", sans-serif;
+            font-size: 1.3rem;
+            font-weight: 700;
+            line-height: 1.05;
+            overflow-wrap: anywhere;
+        }
+
+        .sb-team .sh {
+            margin-top: 3px;
+            color: #6f8c7b;
+            font-size: .64rem;
+            font-weight: 700;
+            letter-spacing: .14em;
+        }
+
+        .sb-team.win .nm {
+            color: var(--lime);
+        }
+
+    .sb-logo {
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        object-fit: contain;
+        filter: drop-shadow(0 5px 8px rgba(0,0,0,.35));
+    }
+
+    .sb-crest {
         display: grid;
         place-items: center;
-        flex: 0 0 35px;
-        width: 35px;
-        height: 35px;
-        border: 1px solid #304866;
+        width: 40px;
+        height: 40px;
+        flex: 0 0 40px;
+        border: 1px solid rgba(184,255,59,.28);
         border-radius: 50%;
-        background: #1a2c45;
-        color: white;
+        background: radial-gradient(circle at 30% 20%, #275c3e, #0a2116 72%);
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.2rem;
         font-weight: 800;
     }
 
-    .team-name {
-        overflow-wrap: anywhere;
-        color: #edf3fc;
-        font-size: .8rem;
-        font-weight: 700;
-        line-height: 1.4;
-    }
-
-    .team-role {
-        margin-top: 4px;
-        color: #7187a8;
-        font-size: .62rem;
-    }
-
-    .score {
-        min-width: 62px;
-        color: white;
-        font-size: 1.65rem;
+    .sb-score {
+        display: grid;
+        place-items: center;
+        height: 46px;
+        border-radius: 12px;
+        background: #06140e;
+        border: 1px solid #1f4030;
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.9rem;
         font-weight: 800;
-        text-align: center;
+        line-height: 1;
         white-space: nowrap;
     }
 
-        .score.pending {
-            color: #a9bddb;
-            font-size: 1rem;
+        .sb-score span {
+            color: var(--lime);
+            padding: 0 4px;
         }
 
-    .match-footer {
+        .sb-score.vs {
+            color: #b5cdbc;
+            font-size: 1.3rem;
+        }
+
+    .sb-meta {
+        text-align: right;
+    }
+
+    .fx-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border: 1px solid rgba(145,173,157,.3);
+        border-radius: 999px;
+        font-size: .62rem;
+        font-weight: 800;
+        letter-spacing: .1em;
+        color: #c9d8ef;
+    }
+
+        .fx-badge.finished {
+            border-color: rgba(184,255,59,.36);
+            background: rgba(184,255,59,.07);
+            color: #c9ff83;
+        }
+
+        .fx-badge.live {
+            border-color: rgba(255,89,100,.45);
+            background: rgba(255,89,100,.1);
+            color: #ff8d96;
+        }
+
+    .sb-quick {
+        margin-top: 7px;
+        color: #7a9585;
+        font-size: .74rem;
+    }
+
+        .sb-quick span {
+            margin-left: 10px;
+        }
+
+    .sb-caret {
+        color: #6f8c7b;
+        font-size: 1rem;
+        transition: transform .25s;
+    }
+
+    .sb-row.open .sb-caret {
+        transform: rotate(180deg);
+        color: var(--lime);
+    }
+
+    .sb-events {
+        padding: 4px 18px 18px;
+        border-top: 1px dashed rgba(36,70,56,.9);
+    }
+
+        .sb-events[hidden] {
+            display: none;
+        }
+
+    .sb-ev-head {
+        display: grid;
+        grid-template-columns: 1fr 70px 1fr;
+        margin: 12px 0 8px;
+        color: #6f8c7b;
+        font-size: .66rem;
+        font-weight: 800;
+        letter-spacing: .14em;
+        text-transform: uppercase;
+    }
+
+        .sb-ev-head span:first-child {
+            text-align: right;
+        }
+
+        .sb-ev-head span:nth-child(2) {
+            text-align: center;
+        }
+
+    .ev-row {
+        display: grid;
+        grid-template-columns: 1fr 70px 1fr;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 0;
+        border-bottom: 1px solid rgba(36,70,56,.5);
+    }
+
+        .ev-row:last-of-type {
+            border-bottom: 0;
+        }
+
+    .ev-min {
+        justify-self: center;
+        padding: 4px 10px;
+        border-radius: 8px;
+        background: #071710;
+        border: 1px solid #294b39;
+        color: #c4f2cf;
+        font-family: "Barlow Condensed", sans-serif;
+        font-weight: 700;
+    }
+
+    .ev-side {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
         gap: 10px;
-        margin-top: 18px;
-        padding-top: 12px;
-        border-top: 1px solid var(--border);
+        min-width: 0;
     }
 
-    .stadium {
-        overflow: hidden;
-        max-width: 58%;
-        color: #8397b5;
-        font-size: .71rem;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .detail-link {
-        color: #85b5ff;
-        font-size: .75rem;
-        font-weight: 700;
-        text-decoration: none;
-        white-space: nowrap;
-    }
-
-        .detail-link:hover {
-            color: white;
+        .ev-side.l {
+            justify-content: flex-end;
+            text-align: right;
+            flex-direction: row-reverse;
         }
 
-    .empty-message {
-        padding: 24px 16px;
+        .ev-side b {
+            display: block;
+            font-size: .9rem;
+            overflow-wrap: anywhere;
+        }
+
+        .ev-side small {
+            color: var(--muted);
+            font-size: .72rem;
+        }
+
+    .ev-ic {
+        display: grid;
+        place-items: center;
+        flex: 0 0 32px;
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        background: #142e21;
+        font-size: .95rem;
+    }
+
+        .ev-ic.goal {
+            color: var(--lime);
+        }
+
+        .ev-ic.sub {
+            color: var(--mint);
+        }
+
+        .ev-ic.yellow::before, .ev-ic.red::before {
+            content: "";
+            width: 11px;
+            height: 15px;
+            border-radius: 2px;
+        }
+
+        .ev-ic.yellow::before {
+            background: var(--amber);
+        }
+
+        .ev-ic.red::before {
+            background: var(--red);
+        }
+
+    .sb-none {
+        padding: 16px 0 4px;
+        text-align: center;
         color: var(--muted);
-        font-size: .82rem;
-        line-height: 1.7;
+        font-size: .85rem;
+    }
+
+    .sb-detail {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 9px 16px;
+        border: 1px solid rgba(184,255,59,.35);
+        border-radius: 10px;
+        color: #d7ff9a;
+        font-size: .8rem;
+        font-weight: 800;
+        letter-spacing: .06em;
+        transition: .2s;
+    }
+
+        .sb-detail:hover {
+            background: rgba(184,255,59,.12);
+            color: #fff;
+        }
+
+    /* ===== PUAN DURUMU ===== */
+    .st-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+        gap: 16px;
+        align-items: start;
+    }
+
+    .st-wrap {
+        padding: 8px 14px 6px;
+    }
+
+    .st-head, .st-row {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr) repeat(3, 28px) repeat(2, 34px) 40px 42px;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .st-head {
+        padding: 10px;
+        color: #6f8c7b;
+        font-size: .66rem;
+        font-weight: 800;
+        letter-spacing: .1em;
+        text-transform: uppercase;
         text-align: center;
     }
 
-    .page-footer {
+        .st-head span:nth-child(2) {
+            text-align: left;
+        }
+
+    .st-row {
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 5px;
+        padding: 9px 10px;
+        border-radius: 12px;
+        background: rgba(255,255,255,.025);
+        font-size: .85rem;
+        text-align: center;
+        transition: background .2s;
+    }
+
+        .st-row:hover {
+            background: rgba(184,255,59,.07);
+        }
+
+        .st-row .bar {
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--lime), transparent);
+            opacity: .6;
+        }
+
+    .st-pos {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        background: #14291f;
+        color: #9fb8a8;
+        font-size: .8rem;
+        font-weight: 800;
+    }
+
+        .st-pos.cl {
+            background: rgba(184,255,59,.16);
+            color: var(--lime);
+        }
+
+        .st-pos.el {
+            background: rgba(67,224,160,.14);
+            color: var(--mint);
+        }
+
+        .st-pos.rel {
+            background: rgba(255,89,100,.15);
+            color: #ff8d96;
+        }
+
+    .st-team {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-width: 0;
+        text-align: left;
+        color: inherit;
+    }
+
+        .st-team:hover {
+            color: #fff;
+        }
+
+    .st-mini {
+        width: 26px;
+        height: 26px;
+        object-fit: contain;
+        flex: 0 0 26px;
+    }
+
+    .st-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 700;
+    }
+
+    .st-pts {
+        color: var(--lime);
+        font-family: "Barlow Condensed", sans-serif;
+        font-size: 1.15rem;
+        font-weight: 800;
+    }
+
+    .av-pos {
+        color: #7debc2;
+    }
+
+    .av-neg {
+        color: #ff8d96;
+    }
+
+    .fx-legend {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+        padding: 4px 22px 18px;
+        color: var(--muted);
+        font-size: .74rem;
+    }
+
+        .fx-legend span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .fx-legend i {
+            width: 9px;
+            height: 9px;
+            border-radius: 3px;
+            display: inline-block;
+        }
+
+    .fx-foot {
         display: flex;
         justify-content: space-between;
+        gap: 12px;
         flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 28px;
-        padding-top: 17px;
-        border-top: 1px solid var(--border);
-        color: #7186a5;
-        font-size: .75rem;
+        margin-top: 36px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: #7a9585;
+        font-size: .8rem;
     }
 
-        .page-footer strong {
-            color: #b8c9e2;
+        .fx-foot strong {
+            color: #a5c9b2;
+            font-family: "Barlow Condensed", sans-serif;
+            letter-spacing: .12em;
         }
 
-    @@media (max-width: 900px) {
-        .hero {
-            align-items: flex-start;
-            flex-direction: column;
+    .fx-js .reveal {
+        opacity: 0;
+        transform: translateY(22px);
+        transition: opacity .7s cubic-bezier(.2,.75,.2,1), transform .7s cubic-bezier(.2,.75,.2,1);
+        transition-delay: var(--d, 0s);
+    }
+
+        .fx-js .reveal.in {
+            opacity: 1;
+            transform: none;
         }
 
-        .hero-side {
-            width: 100%;
-            flex-basis: auto;
-        }
-
-        .stats-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+    @@keyframes fx-draw {
+        to {
+            stroke-dashoffset: 0;
         }
     }
 
-    @@media (max-width: 680px) {
-        .football-shell {
-            width: calc(100% - 22px);
+    @@keyframes fx-ball {
+        from {
+            transform: translateX(-160px) rotate(-420deg) scale(.5);
+            opacity: 0;
         }
 
-        .football-page {
-            padding-top: 12px;
+        to {
+            transform: none;
+            opacity: 1;
+        }
+    }
+
+    @@keyframes fx-fade {
+        to {
+            opacity: 1;
+        }
+    }
+
+    @@keyframes fx-letter {
+        to {
+            opacity: 1;
+            transform: none;
+        }
+    }
+
+    @@keyframes fx-load {
+        to {
+            transform: scaleX(1);
+        }
+    }
+
+    @@keyframes fx-pulse {
+        50% {
+            opacity: .3;
+            transform: scale(.7);
+        }
+    }
+
+    @@keyframes fx-marquee {
+        to {
+            transform: translateX(-50%);
+        }
+    }
+
+    @@media (max-width: 1180px) {
+        .fx-kpis {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
-        .hero {
-            padding: 21px 17px;
-            border-radius: 16px;
-        }
-
-            .hero h1 {
-                font-size: 2.45rem;
-            }
-
-            .hero p {
-                font-size: .84rem;
-            }
-
-        .hero-side {
+        .fx-highlights {
             grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
-        .stats-grid {
-            gap: 9px;
+        .fx-charts {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
-        .stat-card {
-            padding: 14px;
-        }
+            .fx-charts .wide {
+                grid-column: span 2;
+            }
 
-        .stat-value {
-            font-size: 1.75rem;
-        }
-
-        .section-heading {
-            align-items: flex-start;
-            flex-direction: column;
-        }
-
-        .chart-grid,
-        .leaders-grid,
-        .match-grid {
+        .st-grid {
             grid-template-columns: 1fr;
         }
 
-        .chart-wrap {
-            height: 270px;
-            padding: 13px;
+        .sb-main {
+            grid-template-columns: 72px minmax(0, 1fr) 88px minmax(0, 1fr) 24px;
         }
 
-        .filter-row {
-            align-items: stretch;
-            flex-direction: column;
+        .sb-meta {
+            display: none;
         }
-
-        .week-input,
-        .search-input,
-        #matchStatus {
-            width: 100%;
-        }
-
-        .week-form {
-            display: flex;
-            gap: 8px;
-        }
-
-            .week-form .week-input {
-                flex: 1;
-                width: 0;
-            }
     }
 
-    @@media (max-width: 390px) {
-        .team {
-            gap: 5px;
+    @@media (max-width: 760px) {
+        .fx-shell, .mk-bar-in {
+            width: calc(100% - 22px);
         }
 
-        .team-badge {
-            flex-basis: 29px;
-            width: 29px;
-            height: 29px;
+        .mk-nav {
+            display: none;
         }
 
-        .team-name {
-            font-size: .73rem;
+        .mk-league {
+            display: none;
         }
 
-        .score {
-            min-width: 48px;
-            font-size: 1.45rem;
+        .fx-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .fx-charts {
+            grid-template-columns: 1fr;
+        }
+
+            .fx-charts .wide {
+                grid-column: auto;
+            }
+
+        .fx-highlights {
+            grid-template-columns: 1fr;
+        }
+
+        .sb-main {
+            grid-template-columns: 1fr 70px 1fr 20px;
+            gap: 8px;
+            padding: 12px;
+        }
+
+        .sb-time {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 10px;
+            align-items: baseline;
+        }
+
+            .sb-time small {
+                margin: 0;
+            }
+
+        .sb-team, .sb-team.home {
+            flex-direction: column;
+            text-align: center;
+            gap: 6px;
+        }
+
+            .sb-team .nm {
+                font-size: 1.05rem;
+            }
+
+        .sb-score {
+            font-size: 1.5rem;
+            height: 40px;
+        }
+
+        .st-head, .st-row {
+            grid-template-columns: 30px minmax(0, 1fr) 28px 38px 40px;
+        }
+
+            .st-head span:nth-child(n+3):nth-child(-n+7), .st-row > span:nth-child(n+3):nth-child(-n+7) {
+                display: none;
+            }
+
+        .ev-row, .sb-ev-head {
+            grid-template-columns: 1fr 56px 1fr;
+        }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .fx-intro *, .fx-track, .mk-dot {
+            animation: none !important;
+        }
+
+        .fx-intro-title span, .fx-intro-kicker, .fx-intro-sub {
+            opacity: 1 !important;
+            transform: none !important;
+        }
+
+        .fx-intro-pitch .ln {
+            stroke-dashoffset: 0;
+        }
+
+        .fx-js .reveal {
+            opacity: 1;
+            transform: none;
+            transition: none;
         }
     }
 </style>
 
-<main class="football-page">
-    <div class="football-shell">
+<!-- ================= AÇILIŞ ================= -->
+<div class="fx-intro" id="fxIntro" aria-hidden="true">
+    <svg class="fx-intro-pitch" viewBox="0 0 800 500" preserveAspectRatio="xMidYMid slice">
+        <rect class="ln" pathLength="1" x="40" y="30" width="720" height="440" />
+        <line class="ln" pathLength="1" x1="400" y1="30" x2="400" y2="470" />
+        <circle class="ln" pathLength="1" cx="400" cy="250" r="70" />
+        <rect class="ln" pathLength="1" x="40" y="145" width="110" height="210" />
+        <rect class="ln" pathLength="1" x="650" y="145" width="110" height="210" />
+        <circle class="ln" pathLength="1" cx="400" cy="250" r="4" />
+    </svg>
+    <div class="fx-intro-core">
+        <div class="fx-intro-ball">⚽</div>
+        <div class="fx-intro-kicker">SERIE A · 2026/27</div>
+        <div class="fx-intro-title" aria-label="Matchday">
+            <span style="--i:0">M</span><span style="--i:1">A</span><span style="--i:2">T</span><span style="--i:3">C</span><span style="--i:4">H</span><span style="--i:5">D</span><span style="--i:6">A</span><span style="--i:7">Y</span>
+        </div>
+        <div class="fx-intro-sub">@week. HAFTA FİKSTÜRÜ</div>
+        <div class="fx-intro-bar"><i></i></div>
+    </div>
+    <button type="button" class="fx-intro-skip" id="fxSkip">GEÇ ›</button>
+</div>
+<script>
+    try {
+        document.documentElement.classList.add("fx-js");
+        if (sessionStorage.getItem("fxIntroSeen")) { var __i = document.getElementById("fxIntro"); if (__i) __i.remove(); }
+    } catch (e) { }
+</script>
 
-        <section class="hero">
-            <div class="hero-main">
-                <div class="brand">
-                    <span class="brand-icon">⚽</span>
-                    <span>İTALYA FUTBOL LİGİ · MAÇ VE İSTATİSTİK MERKEZİ</span>
-                </div>
+<div class="fx-page">
 
-                <h1>Futbolun <span>istatistiklerle</span><br>buluştuğu yer.</h1>
-
-                <p>
-                    Serie A maçlarını takip et, takım performanslarını karşılaştır
-                    ve haftanın oyuncu istatistiklerini tek ekranda incele.
-                </p>
-            </div>
-
-            <div class="hero-side">
-                <div class="hero-stat">
-                    <strong>@matches.Count</strong>
-                    <span>HAFTANIN MAÇI</span>
-                </div>
-                <div class="hero-stat">
-                    <strong>@completed.Count</strong>
-                    <span>TAMAMLANAN</span>
-                </div>
-                <div class="hero-stat">
-                    <strong>@teams.Count</strong>
-                    <span>SAHADAKİ TAKIM</span>
-                </div>
-                <div class="hero-stat">
-                    <strong>@totalGoals</strong>
-                    <span>ATILAN GOL</span>
-                </div>
-            </div>
-        </section>
-
-        <section class="stats-grid">
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span class="stat-label">Toplam gol</span>
-                    <span class="stat-icon">⚽</span>
-                </div>
-                <strong class="stat-value">@totalGoals</strong>
-                <div class="stat-note">Tamamlanan maçların skorları</div>
-            </article>
-
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span class="stat-label">Tamamlanan maç</span>
-                    <span class="stat-icon">✓</span>
-                </div>
-                <strong class="stat-value">@completed.Count</strong>
-                <div class="stat-note">Toplam @matches.Count maç</div>
-            </article>
-
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span class="stat-label">Bekleyen maç</span>
-                    <span class="stat-icon">◷</span>
-                </div>
-                <strong class="stat-value">@pending</strong>
-                <div class="stat-note">Henüz tamamlanmayan karşılaşmalar</div>
-            </article>
-
-            <article class="stat-card">
-                <div class="stat-top">
-                    <span class="stat-label">Maç başına gol</span>
-                    <span class="stat-icon">↗</span>
-                </div>
-                <strong class="stat-value">@averageGoals.ToString("0.00", CultureInfo.InvariantCulture)</strong>
-                <div class="stat-note">Tamamlanan maçların ortalaması</div>
-            </article>
-        </section>
-
-        <section class="section panel fixture-controls">
-            <div class="section-heading">
-                <div>
-                    <div class="section-kicker">FİKSTÜR</div>
-                    <h2 class="section-title">Haftalık maç programı</h2>
-                    <p class="section-description">İstediğin haftayı seçerek maçları ve sonuçları görüntüle.</p>
-                </div>
-                <span class="pill">Seçili hafta: <strong>@selectedWeek</strong></span>
-            </div>
-
-            <div class="filter-row">
-                <form asp-controller="Fixtures" asp-action="Index" method="get" class="week-form">
-                    <input class="field week-input" type="number" name="week"
-                           min="1" max="38" value="@selectedWeek"
-                           aria-label="Hafta numarası" required>
-                    <button type="submit" class="action-button">Haftaya git →</button>
-                </form>
-            </div>
-
-            <nav class="week-list" aria-label="Fikstür haftaları">
-                @for (var i = 1; i <= 38; i++)
-                {
-                    <a class="week-link @(selectedWeek == i ? "active" : "")"
-                       asp-controller="Fixtures" asp-action="Index" asp-route-week="@i">
-                        @i. hafta
-                    </a>
-                }
+    <!-- ================= ÜST BAR ================= -->
+    <header class="mk-bar">
+        <div class="mk-bar-in">
+            <a class="mk-brand" href="@Url.Action("Index", "Fixtures", new { week = week })"><span class="m">⚽</span><b>MATCH<span>DAY</span></b></a>
+            <nav class="mk-nav">
+                <a class="active" href="@Url.Action("Index", "Fixtures", new { week = week })">Fikstür</a>
+                <a href="#skor">Skorlar</a>
+                <a href="#analiz">Analiz</a>
+                <a href="#puan">Puan Durumu</a>
+                <a href="@Url.Action("Index", "Standings")">Tam Tablo</a>
             </nav>
-        </section>
-
-        <section class="section">
-            <div class="section-heading">
-                <div>
-                    <div class="section-kicker">HAFTALIK ANALİZ</div>
-                    <h2 class="section-title">Sahanın istatistikleri</h2>
-                    <p class="section-description">
-                        Seçili haftanın tamamlanmış maçlarından hesaplanan iki temel grafik.
-                    </p>
-                </div>
-                <span class="pill">@selectedWeek. hafta verileri</span>
+            <div class="mk-right">
+                @if (liveCount > 0)
+                {
+                    <span class="mk-live-chip"><i class="mk-dot"></i> CANLI · @liveCount</span>
+                }
+                <span class="mk-league">🇮🇹 SERIE A</span>
+                <span class="mk-clock" id="mkClock">--:--:--</span>
             </div>
+        </div>
+    </header>
 
-            <div class="chart-grid">
-                <article class="chart-card">
-                    <div class="chart-header">
-                        <div>
-                            <h3 class="chart-title">Takımların gol performansı</h3>
-                            <p class="chart-subtitle">Atılan gollere göre ilk 10 takım</p>
-                        </div>
-                        <span class="chart-badge">GOL SAYISI</span>
-                    </div>
+    <div class="fx-shell">
 
-                    <div class="chart-wrap">
-                        @if (completed.Any())
-                        {
-                            <canvas id="teamGoalsChart" aria-label="Takımların gol performansı"></canvas>
-                        }
-                        else
-                        {
-                            <div class="empty-message">Grafiği oluşturmak için tamamlanmış maç bulunmuyor.</div>
-                        }
-                    </div>
-
-                    <div class="chart-note">
-                        Veriler seçili haftadaki maç skorlarından hesaplanır.
-                    </div>
-                </article>
-
-                <article class="chart-card">
-                    <div class="chart-header">
-                        <div>
-                            <h3 class="chart-title">Maç sonuçlarının dağılımı</h3>
-                            <p class="chart-subtitle">Ev sahibi, beraberlik ve deplasman sonuçları</p>
-                        </div>
-                        <span class="chart-badge">SONUÇLAR</span>
-                    </div>
-
-                    <div class="chart-wrap">
-                        @if (completed.Any())
-                        {
-                            <canvas id="outcomesChart" aria-label="Maç sonuçlarının dağılımı"></canvas>
-                        }
-                        else
-                        {
-                            <div class="empty-message">Sonuçlar girildiğinde grafik burada görüntülenir.</div>
-                        }
-                    </div>
-
-                    <div class="chart-note">
-                        Ev sahibi: @homeWins · Beraberlik: @draws · Deplasman: @awayWins
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <section class="section">
-            <div class="section-heading">
-                <div>
-                    <div class="section-kicker">OYUNCU İSTATİSTİKLERİ</div>
-                    <h2 class="section-title">Haftanın yıldızları</h2>
-                    <p class="section-description">
-                        Gol ve kırmızı kart kayıtları maç detaylarındaki gerçek olaylardan toplanır.
-                    </p>
-                </div>
-            </div>
-
-            <div class="leaders-grid">
-                <article class="leader-card">
-                    <div class="leader-header">
-                        <h3>⚽ Gol krallığı</h3>
-                        <p>Seçili haftanın maçlarında atılan goller</p>
-                    </div>
-                    <div id="topScorers" class="leader-list">
-                        <div class="empty-message">Gol kayıtları yükleniyor...</div>
-                    </div>
-                    <div class="leader-note">
-                        Bu liste yalnızca seçili haftanın maçlarını kapsar; sezon geneli sıralama değildir.
-                    </div>
-                </article>
-
-                <article class="leader-card">
-                    <div class="leader-header">
-                        <h3>🟥 Kırmızı kart raporu</h3>
-                        <p>Kırmızı kart gören oyuncular</p>
-                    </div>
-                    <div id="redCardLeaders" class="leader-list">
-                        <div class="empty-message">Kart kayıtları yükleniyor...</div>
-                    </div>
-                    <div class="leader-note">
-                        Yalnızca kırmızı kart olarak kayıtlı olaylar sayılır; sarı kartlar dahil edilmez.
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <section class="section">
-            <div class="section-heading">
-                <div>
-                    <div class="section-kicker">MAÇ MERKEZİ</div>
-                    <h2 class="section-title">@selectedWeek. hafta maçları</h2>
-                    <p class="section-description">Takım adına göre ara veya maç durumuna göre filtrele.</p>
-                </div>
-                <span class="pill"><strong id="visibleCount">@matches.Count</strong> maç</span>
-            </div>
-
-            <div class="filter-row">
-                <input id="matchSearch" class="field search-input" type="search"
-                       placeholder="🔎 Takım ara..." aria-label="Takım adına göre ara">
-
-                <select id="matchStatus" class="field" aria-label="Maç durumunu seç">
-                    <option value="all">Tüm maçlar</option>
-                    <option value="done">Tamamlanan maçlar</option>
-                    <option value="pending">Bekleyen maçlar</option>
-                </select>
-            </div>
-
-            @if (matches.Any())
-            {
-                <div class="match-grid" id="matchGrid">
-                    @foreach (var match in matches.OrderBy(m => m.MatchDate).ThenBy(m => m.Time))
+        <!-- ================= TAKIM LOGOLARI ================= -->
+        @if (teams.Any())
+        {
+            <section class="tm-strip reveal" id="teams">
+                <div class="tm-head"><span>Serie A Takımları</span><b>@teams.Count takım</b></div>
+                <div class="tm-row">
+                    @foreach (var t in teams.OrderBy(x => x.Name))
                     {
-                        var hasScore = match.HomeScore.HasValue && match.AwayScore.HasValue;
-                        var home = match.HomeTeam?.Name ?? "Ev sahibi";
-                        var away = match.AwayTeam?.Name ?? "Deplasman";
-                        var status = match.Status ?? "";
-
-                        var finished = hasScore
-                        || status.Contains("Tamamlandı", StringComparison.OrdinalIgnoreCase)
-                        || status.Contains("Bitti", StringComparison.OrdinalIgnoreCase);
-
-                        var searchText = $"{home} {away} {match.Stadium} {status}".ToLowerInvariant();
-
-                        <article class="match-card"
-                                 data-search="@searchText"
-                                 data-status="@(finished ? "done" : "pending")">
-
-                            <div class="match-meta">
-                                <span>@match.MatchDate.ToString("dd.MM.yyyy") @(string.IsNullOrWhiteSpace(match.Time) ? "" : " · " + match.Time)</span>
-                                <span class="match-status @(finished ? "finished" : "")">
-                                    @(finished ? "TAMAMLANDI" : "PROGRAMDA")
-                                </span>
-                            </div>
-
-                            <div class="match-teams">
-                                <div class="team">
-                                    <span class="team-badge">@(home.Length > 0 ? home.Substring(0, 1).ToUpperInvariant() : "E")</span>
-                                    <div>
-                                        <div class="team-name">@home</div>
-                                        <div class="team-role">EV SAHİBİ</div>
-                                    </div>
-                                </div>
-
-                                <div class="score @(hasScore ? "" : "pending")">
-                                    @if (hasScore)
-                                    {
-                                        @match.HomeScore
-                                        <span> - </span>
-
-                                        @match.AwayScore
-                                    }
-                                    else
-                                    {
-                                        <span>VS</span>
-                                    }
-                                </div>
-
-                                <div class="team away">
-                                    <span class="team-badge">@(away.Length > 0 ? away.Substring(0, 1).ToUpperInvariant() : "D")</span>
-                                    <div>
-                                        <div class="team-name">@away</div>
-                                        <div class="team-role">DEPLASMAN</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="match-footer">
-                                <span class="stadium">
-                                    ⌖ @(string.IsNullOrWhiteSpace(match.Stadium) ? "Stadyum belirtilmedi" : match.Stadium)
-                                </span>
-                                <a class="detail-link"
-                                   asp-controller="Match"
-                                   asp-action="Detail"
-                                   asp-route-id="@match.MatchId">
-                                    Maç detayları ↗
-                                </a>
-                            </div>
-                        </article>
+                        <a class="tm-item" href="@Url.Action("Details", "Teams", new { id = t.TeamId })" title="@t.Name">
+                            @if (!string.IsNullOrWhiteSpace(t.LogoUrl))
+                            {
+                                <img src="@t.LogoUrl" alt="@t.Name" onerror="this.style.display='none';" />
+                            }
+                            else
+                            {
+                                <span class="cr">@Init(t.Name)</span>
+                            }
+                            <small>@TShort(t.ShortName, t.Name)</small>
+                        </a>
                     }
                 </div>
+            </section>
+        }
 
-                <div id="noMatchResults" class="panel empty-message" hidden>
-                    Bu filtreye uygun maç bulunamadı.
+        <!-- ================= LİG BAŞLIĞI + HAFTA ================= -->
+        <div class="lg-head reveal">
+            <div class="lg-title">
+                <span class="ic">🏆</span>
+                <div>
+                    <h1>SERIE A <span>· @week. HAFTA</span></h1>
+                    <p>İtalya Serie A 2026/27 sezonu · @Model.TotalMatches maç · @Model.CompletedMatches tamamlandı</p>
                 </div>
-            }
-            else
-            {
-                <div class="panel empty-message">
-                    Bu hafta için maç bulunamadı. Başka bir hafta seçmeyi dene.
+            </div>
+
+            <nav class="fx-weeknav" aria-label="Hafta seçimi">
+                <a class="fx-arrow @(week <= 1 ? "disabled" : "")" asp-controller="Fixtures" asp-action="Index" asp-route-week="@(week - 1)" aria-label="Önceki hafta">‹</a>
+                @if (chipFrom > 1)
+                {
+                    <a class="fx-chip" asp-controller="Fixtures" asp-action="Index" asp-route-week="1">1</a>
+                    if (chipFrom > 2)
+                    {
+                        <span style="color:#6f8c7b">…</span>
+                    }
+                }
+                @for (int i = chipFrom; i <= chipTo; i++)
+                {
+                    <a class="fx-chip @(i == week ? "active" : "")" asp-controller="Fixtures" asp-action="Index" asp-route-week="@i">@i. Hafta</a>
+                }
+                @if (chipTo < 38)
+                {
+                    if (chipTo < 37)
+                    {
+                        <span style="color:#6f8c7b">…</span>
+                    }
+                    <a class="fx-chip" asp-controller="Fixtures" asp-action="Index" asp-route-week="38">38</a>
+                }
+                <a class="fx-arrow @(week >= 38 ? "disabled" : "")" asp-controller="Fixtures" asp-action="Index" asp-route-week="@(week + 1)" aria-label="Sonraki hafta">›</a>
+            </nav>
+        </div>
+
+        @if (hasMatches)
+        {
+            <div class="fx-ticker reveal" aria-label="Haftanın sonuçları">
+                <div class="fx-track">
+                    @for (int pass = 0; pass < 2; pass++)
+                    {
+                        foreach (var tm in ms)
+                        {
+                            <span class="fx-tick">
+                                @TShort(tm.HomeTeam.ShortName, tm.HomeTeam.Name)
+                                @if (tm.HomeScore.HasValue && tm.AwayScore.HasValue)
+                                {
+                                    <b>@tm.HomeScore - @tm.AwayScore</b>
+                                }
+                                else
+                                {
+                                    <em>@(string.IsNullOrWhiteSpace(tm.Time) ? "vs" : tm.Time)</em>
+                                }
+                                @TShort(tm.AwayTeam.ShortName, tm.AwayTeam.Name)
+                            </span>
+                        }
+                    }
                 </div>
-            }
+            </div>
+        }
+
+        @if (ViewBag.Error != null)
+        {
+            <div class="fx-error"><strong>API Hatası</strong><br />@ViewBag.Error</div>
+        }
+
+        <!-- ================= ANALİZ (ÜSTTE) ================= -->
+        <h2 class="fx-section-title reveal" id="analiz">HAFTA <span>ANALİZİ</span></h2>
+
+        <section class="fx-kpis">
+            <article class="fx-kpi reveal" style="--glow:rgba(184,255,59,.14)"><span class="fx-kpi-ico">🏟️</span><span class="fx-kpi-label">Maç</span><strong class="fx-kpi-value js-count" data-target="@Model.TotalMatches">0</strong></article>
+            <article class="fx-kpi reveal" style="--glow:rgba(67,224,160,.16); --d:.05s"><span class="fx-kpi-ico">⚽</span><span class="fx-kpi-label">Toplam gol</span><strong class="fx-kpi-value js-count" data-target="@Model.TotalGoals">0</strong></article>
+            <article class="fx-kpi reveal" style="--glow:rgba(112,217,176,.16); --d:.1s"><span class="fx-kpi-ico">📈</span><span class="fx-kpi-label">Maç başı gol</span><strong class="fx-kpi-value js-count" data-target="@Num(avgGoals)" data-dec="2">0</strong></article>
+            <article class="fx-kpi reveal" style="--glow:rgba(255,209,102,.18); --d:.15s"><span class="fx-kpi-ico">🟨</span><span class="fx-kpi-label">Sarı kart</span><strong class="fx-kpi-value js-count" data-target="@yellowCount">0</strong></article>
+            <article class="fx-kpi reveal" style="--glow:rgba(255,89,100,.18); --d:.2s"><span class="fx-kpi-ico">🟥</span><span class="fx-kpi-label">Kırmızı kart</span><strong class="fx-kpi-value js-count" data-target="@redCount">0</strong></article>
+            <article class="fx-kpi reveal" style="--glow:rgba(67,224,160,.16); --d:.25s"><span class="fx-kpi-ico">🔁</span><span class="fx-kpi-label">Oyuncu değişikliği</span><strong class="fx-kpi-value js-count" data-target="@subCount">0</strong></article>
         </section>
 
-        <footer class="page-footer">
-            <strong>SERIE A · FUTBOL MERKEZİ</strong>
-            <span>Maçlar, skorlar ve istatistikler tek yerde.</span>
+        <section class="fx-highlights">
+            <div class="fx-hl reveal">
+                <small>Haftanın golcüsü</small>
+                @if (topScorer != null)
+                {
+                    <strong>@topScorer.Name <em>@topScorer.Count gol</em></strong>
+                    <p>@topScorer.Team</p>
+                }
+                else
+                {
+                    <strong>—</strong>
+                    <p>Gol kaydı yok</p>
+                }
+                <span class="big">👟</span>
+            </div>
+            <div class="fx-hl reveal" style="--d:.06s">
+                <small>En çok gollü maç</small>
+                @if (topMatch != null)
+                {
+                    <strong>@TShort(topMatch.HomeTeam.ShortName, topMatch.HomeTeam.Name) <em>@topMatch.HomeScore - @topMatch.AwayScore</em> @TShort(topMatch.AwayTeam.ShortName, topMatch.AwayTeam.Name)</strong>
+                    <p>Toplam @((topMatch.HomeScore ?? 0) + (topMatch.AwayScore ?? 0)) gol</p>
+                }
+                else
+                {
+                    <strong>—</strong>
+                    <p>Henüz oynanmış maç yok</p>
+                }
+                <span class="big">🔥</span>
+            </div>
+            <div class="fx-hl reveal" style="--d:.12s">
+                <small>En erken gol</small>
+                @if (earliestGoal != null)
+                {
+                    <strong><em>@earliestGoal.Minute'</em> @earliestGoal.PlayerName</strong>
+                    <p>@earliestGoal.Team</p>
+                }
+                else
+                {
+                    <strong>—</strong>
+                    <p>Gol kaydı yok</p>
+                }
+                <span class="big">⚡</span>
+            </div>
+            <div class="fx-hl reveal" style="--d:.18s">
+                <small>En geç gol</small>
+                @if (latestGoal != null)
+                {
+                    <strong><em>@latestGoal.Minute'</em> @latestGoal.PlayerName</strong>
+                    <p>@latestGoal.Team</p>
+                }
+                else
+                {
+                    <strong>—</strong>
+                    <p>Gol kaydı yok</p>
+                }
+                <span class="big">⏱️</span>
+            </div>
+        </section>
+
+        <section class="fx-charts">
+            <div class="fx-panel wide reveal">
+                <div class="fx-ph"><h2><i>◷</i>Gol Dakikaları</h2><small>15 dakikalık dilimler</small></div>
+                @if (goalEvents.Any())
+                {
+                    <div class="fx-chart-wrap"><canvas id="chMinutes" aria-label="Gol dakikaları grafiği"></canvas></div>
+                    <div class="fx-chips"><span>İlk yarı <b>@firstHalfGoals</b> gol</span><span>İkinci yarı <b>@secondHalfGoals</b> gol</span></div>
+                }
+                else
+                {
+                    <div class="fx-empty"><div class="ic">⚽</div>Gol olayı kaydı bulunmuyor.</div>
+                }
+            </div>
+
+            <div class="fx-panel reveal" style="--d:.06s">
+                <div class="fx-ph"><h2><i>◔</i>Sonuç Dağılımı</h2><small>Ev · Beraberlik · Deplasman</small></div>
+                @if (playedCount > 0)
+                {
+                    <div class="fx-chart-wrap"><canvas id="chResults" aria-label="Sonuç dağılımı grafiği"></canvas></div>
+                }
+                else
+                {
+                    <div class="fx-empty"><div class="ic">◔</div>Oynanmış maç yok.</div>
+                }
+            </div>
+
+            <div class="fx-panel reveal">
+                <div class="fx-ph"><h2><i>▮</i>Maç Başına Gol</h2><small>Oynanan maçlar</small></div>
+                @if (playedCount > 0)
+                {
+                    <div class="fx-chart-wrap"><canvas id="chGoals" aria-label="Maç başına gol grafiği"></canvas></div>
+                }
+                else
+                {
+                    <div class="fx-empty"><div class="ic">▮</div>Oynanmış maç yok.</div>
+                }
+            </div>
+
+            <div class="fx-panel reveal" style="--d:.06s">
+                <div class="fx-ph"><h2><i>♟</i>Golcüler</h2><small>Haftanın en çok gol atanları</small></div>
+                @if (scorers.Any())
+                {
+                    <div class="fx-chart-wrap"><canvas id="chScorers" aria-label="Golcüler grafiği"></canvas></div>
+                }
+                else
+                {
+                    <div class="fx-empty"><div class="ic">👟</div>Golcü verisi yok.</div>
+                }
+            </div>
+
+            <div class="fx-panel reveal" style="--d:.12s">
+                <div class="fx-ph"><h2><i>▰</i>Kartlar</h2><small>Takımlara göre</small></div>
+                @if (teamCards.Any())
+                {
+                    <div class="fx-chart-wrap"><canvas id="chCards" aria-label="Kart grafiği"></canvas></div>
+                }
+                else
+                {
+                    <div class="fx-empty"><div class="ic">🟨</div>Kart kaydı yok.</div>
+                }
+            </div>
+
+            <div class="fx-panel wide reveal">
+                <div class="fx-ph"><h2><i>⇆</i>Ev Sahibi · Deplasman</h2><small>Gol ve galibiyet paylaşımı</small></div>
+                <div class="fx-split">
+                    <div class="fx-split-row"><b>@homeGoalsSum</b><span>Atılan gol · toplam @goalsSum</span><b>@awayGoalsSum</b></div>
+                    <div class="fx-split-bar"><i class="h" data-w="@Num(homeGoalPct)"></i><i class="a" data-w="@Num(100 - homeGoalPct)"></i></div>
+                    <div class="fx-split-row" style="margin-top:6px"><b>@homeW</b><span>Galibiyet · beraberlik @drawN</span><b>@awayW</b></div>
+                    <div class="fx-split-bar"><i class="h" data-w="@Num(playedCount > 0 ? homeW * 100.0 / playedCount : 50)"></i><i class="a" data-w="@Num(playedCount > 0 ? awayW * 100.0 / playedCount : 50)"></i></div>
+                    <div class="fx-split-legend"><span><i style="background:#b8ff3b"></i>Ev sahibi</span><span><i style="background:#70d9b0"></i>Deplasman</span></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= SKOR TABLOSU ================= -->
+        <h2 class="fx-section-title reveal" id="skor">SKOR <span>TABLOSU</span></h2>
+
+        <section class="fx-panel reveal">
+            <div class="fx-ph">
+                <h2><i>◈</i>@week. Hafta Maçları</h2>
+                <small>Bir maça tıkla: goller, kartlar ve değişiklikler açılır</small>
+            </div>
+
+            <div class="sb-tabs" role="tablist">
+                <button class="sb-tab active" type="button" data-f="all">Tümü<em>@ms.Count</em></button>
+                <button class="sb-tab" type="button" data-f="live">Canlı<em>@liveCount</em></button>
+                <button class="sb-tab" type="button" data-f="finished">Biten<em>@ms.Count(m => GetStatusClass(m.Status) == "finished")</em></button>
+                <button class="sb-tab" type="button" data-f="upcoming">Başlamayan<em>@ms.Count(m => GetStatusClass(m.Status) == "upcoming")</em></button>
+            </div>
+
+            <div class="sb-list">
+                @if (!hasMatches)
+                {
+                    <div class="fx-empty"><div class="ic">⚽</div><h3>Bu haftada maç bulunamadı</h3><p>Henüz bu hafta için fikstür oluşturulmamış.</p></div>
+                }
+                else
+                {
+                    foreach (var day in days)
+                    {
+                        <div class="sb-block">
+                            <div class="sb-day">@day.Key.ToString("dd MMMM yyyy, dddd", tr)</div>
+
+                            @foreach (var match in day)
+                            {
+                                var statusClass = GetStatusClass(match.Status);
+                                var statusText = GetStatusText(match.Status);
+                                var hasScore = match.HomeScore.HasValue && match.AwayScore.HasValue;
+                                var hWin = hasScore && match.HomeScore > match.AwayScore;
+                                var aWin = hasScore && match.HomeScore < match.AwayScore;
+                                var mGoals = match.Goals ?? new List<GoalEventDto>();
+                                var mCards = match.Cards ?? new List<CardEventDto>();
+                                var mSubs = match.Substitutions ?? new List<SubEventDto>();
+
+                                var evs = new List<(int Minute, string Kind, string Icon, string Text, string Sub, bool IsHome)>();
+                                foreach (var g in mGoals)
+                                    evs.Add((g.Minute, "goal", "⚽", string.IsNullOrWhiteSpace(g.PlayerName) ? "Bilinmeyen oyuncu" : g.PlayerName, "Gol", string.Equals(g.Team, match.HomeTeam.Name, StringComparison.OrdinalIgnoreCase)));
+                                foreach (var c in mCards)
+                                    evs.Add((c.Minute, IsRed(c.CardType) ? "red" : "yellow", "", string.IsNullOrWhiteSpace(c.PlayerName) ? "Bilinmeyen oyuncu" : c.PlayerName, string.IsNullOrWhiteSpace(c.CardType) ? "Kart" : c.CardType, string.Equals(c.Team, match.HomeTeam.Name, StringComparison.OrdinalIgnoreCase)));
+                                foreach (var s in mSubs)
+                                    evs.Add((s.Minute, "sub", "⇄", string.IsNullOrWhiteSpace(s.PlayerIn) ? "—" : s.PlayerIn, "Çıkan: " + (string.IsNullOrWhiteSpace(s.PlayerOut) ? "—" : s.PlayerOut), string.Equals(s.Team, match.HomeTeam.Name, StringComparison.OrdinalIgnoreCase)));
+                                evs = evs.OrderBy(e => e.Minute).ToList();
+
+                                <article class="sb-row reveal @statusClass" data-status="@statusClass">
+                                    <div class="sb-main" role="button" tabindex="0" aria-expanded="false">
+                                        <div class="sb-time">@(string.IsNullOrWhiteSpace(match.Time) ? "--:--" : match.Time)<small>@match.MatchDate.ToString("dd MMM", tr).ToUpper(tr)</small></div>
+
+                                        <div class="sb-team home @(hWin ? "win" : "")">
+                                            <div><div class="nm">@match.HomeTeam.Name</div><div class="sh">@match.HomeTeam.ShortName</div></div>
+                                            @if (!string.IsNullOrWhiteSpace(match.HomeTeam.LogoUrl))
+                                            {
+                                                <img src="@match.HomeTeam.LogoUrl" class="sb-logo" alt="@match.HomeTeam.Name" onerror="this.style.display='none';" />
+                                            }
+                                            else
+                                            {
+                                                <span class="sb-crest">@Init(match.HomeTeam.Name)</span>
+                                            }
+                                        </div>
+
+                                        @if (hasScore)
+                                        {
+                                            <div class="sb-score">@match.HomeScore<span>:</span>@match.AwayScore</div>
+                                        }
+                                        else
+                                        {
+                                            <div class="sb-score vs">VS</div>
+                                        }
+
+                                        <div class="sb-team @(aWin ? "win" : "")">
+                                            @if (!string.IsNullOrWhiteSpace(match.AwayTeam.LogoUrl))
+                                            {
+                                                <img src="@match.AwayTeam.LogoUrl" class="sb-logo" alt="@match.AwayTeam.Name" onerror="this.style.display='none';" />
+                                            }
+                                            else
+                                            {
+                                                <span class="sb-crest">@Init(match.AwayTeam.Name)</span>
+                                            }
+                                            <div><div class="nm">@match.AwayTeam.Name</div><div class="sh">@match.AwayTeam.ShortName</div></div>
+                                        </div>
+
+                                        <div class="sb-meta">
+                                            <span class="fx-badge @statusClass">
+                                                @if (statusClass == "live")
+                                                {
+                                                    <i class="mk-dot"></i>
+                                                }
+                                                @statusText
+                                            </span>
+                                            <div class="sb-quick">⌖ @(string.IsNullOrWhiteSpace(match.Stadium) ? "Stadyum belirtilmedi" : match.Stadium)<span>⚽ @mGoals.Count</span><span>▰ @mCards.Count</span><span>⇄ @mSubs.Count</span></div>
+                                        </div>
+
+                                        <span class="sb-caret">▾</span>
+                                    </div>
+
+                                    <div class="sb-events" hidden>
+                                        @if (evs.Any())
+                                        {
+                                            <div class="sb-ev-head"><span>@TShort(match.HomeTeam.ShortName, match.HomeTeam.Name)</span><span>Dk.</span><span>@TShort(match.AwayTeam.ShortName, match.AwayTeam.Name)</span></div>
+                                            foreach (var ev in evs)
+                                            {
+                                                <div class="ev-row">
+                                                    <div class="ev-side l">
+                                                        @if (ev.IsHome)
+                                                        {
+                                                            <span class="ev-ic @ev.Kind">@ev.Icon</span>
+                                                            <span><b>@ev.Text</b><small>@ev.Sub</small></span>
+                                                        }
+                                                    </div>
+                                                    <div class="ev-min">@ev.Minute'</div>
+                                                    <div class="ev-side r">
+                                                        @if (!ev.IsHome)
+                                                        {
+                                                            <span class="ev-ic @ev.Kind">@ev.Icon</span>
+                                                            <span><b>@ev.Text</b><small>@ev.Sub</small></span>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="sb-none">Bu maç için henüz olay kaydı bulunmuyor.</div>
+                                        }
+                                        <a class="sb-detail" href="@Url.Action("Detail", "Match", new { id = match.MatchId })">MAÇ DETAYI VE ANALİZİ →</a>
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </section>
+
+        <!-- ================= PUAN DURUMU ================= -->
+        <h2 class="fx-section-title reveal" id="puan">PUAN <span>DURUMU</span></h2>
+
+        <div class="st-grid">
+            <section class="fx-panel reveal">
+                <div class="fx-ph"><h2><i>♛</i>Serie A Puan Tablosu</h2><small>@stCount takım</small></div>
+                <div class="st-wrap">
+                    <div class="st-head"><span>#</span><span>Takım</span><span>O</span><span>G</span><span>B</span><span>M</span><span>AG</span><span>YG</span><span>AV</span><span>P</span></div>
+                    @if (hasStandings)
+                    {
+                        foreach (var team in stAll)
+                        {
+                            var teamData = teams.FirstOrDefault(x => x.TeamId == team.TeamId);
+                            var posClass = team.Position <= 4 ? "cl" : (team.Position <= 6 ? "el" : (stCount > 8 && team.Position > stCount - 3 ? "rel" : ""));
+                            var barW = Num(team.Puan * 100.0 / maxPts);
+                            var avText = team.AV > 0 ? "+" + team.AV : team.AV.ToString();
+                            var avClass = team.AV > 0 ? "av-pos" : (team.AV < 0 ? "av-neg" : "");
+
+                            <div class="st-row">
+                                <span class="st-pos @posClass">@team.Position</span>
+                                <a class="st-team" href="@Url.Action("Details", "Teams", new { id = team.TeamId })">
+                                    @if (teamData != null && !string.IsNullOrWhiteSpace(teamData.LogoUrl))
+                                    {
+                                        <img src="@teamData.LogoUrl" class="st-mini" alt="@team.Team" onerror="this.style.display='none';" />
+                                    }
+                                    <span class="st-name">@team.Team</span>
+                                </a>
+                                <span>@team.O</span><span>@team.G</span><span>@team.B</span><span>@team.M</span>
+                                <span>@team.AG</span><span>@team.YG</span>
+                                <span class="@avClass">@avText</span>
+                                <span class="st-pts">@team.Puan</span>
+                                <span class="bar" style="width:@(barW)%"></span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="fx-empty">Puan durumu verisi bulunamadı.</div>
+                    }
+                </div>
+                <div class="fx-legend">
+                    <span><i style="background:var(--lime)"></i>Şampiyonlar Ligi</span>
+                    <span><i style="background:var(--mint)"></i>Avrupa Ligi</span>
+                    <span><i style="background:var(--red)"></i>Küme düşme hattı</span>
+                </div>
+            </section>
+
+            <section class="fx-panel reveal" style="--d:.08s">
+                <div class="fx-ph"><h2><i>▮</i>Puan Grafiği</h2><small>İlk 10 takım</small></div>
+                @if (hasStandings)
+                {
+                    <div class="fx-chart-wrap tall"><canvas id="chStandings" aria-label="Puan durumu grafiği"></canvas></div>
+                }
+                else
+                {
+                    <div class="fx-empty">Puan durumu verisi bulunamadı.</div>
+                }
+            </section>
+        </div>
+
+        <footer class="fx-foot">
+            <strong>MATCHDAY · SERIE A</strong>
+            <span>Veriler API kayıtlarından hesaplanır.</span>
         </footer>
-
     </div>
-</main>
+</div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
-    document.addEventListener("DOMContentLoaded", async function () {
-        // Maç arama ve durum filtreleme
-        const searchInput = document.getElementById("matchSearch");
-        const statusSelect = document.getElementById("matchStatus");
-        const matchCards = Array.from(document.querySelectorAll(".match-card"));
-        const visibleCount = document.getElementById("visibleCount");
-        const noResults = document.getElementById("noMatchResults");
+    document.addEventListener("DOMContentLoaded", function () {
+        // ---- Saat ----
+        var clock = document.getElementById("mkClock");
+        function tick() { if (clock) clock.textContent = new Date().toLocaleTimeString("tr-TR", { hour12: false }); }
+        tick(); setInterval(tick, 1000);
 
-        function applyFilters() {
-            const query = (searchInput?.value || "").trim().toLocaleLowerCase("tr-TR");
-            const selectedStatus = statusSelect?.value || "all";
-            let visible = 0;
+        // ---- Açılış (oturumda bir kez) ----
+        var intro = document.getElementById("fxIntro");
+        var started = false;
+        function startPage() { if (started) return; started = true; runPage(); }
+        function closeIntro() {
+            if (!intro) return;
+            intro.classList.add("out");
+            try { sessionStorage.setItem("fxIntroSeen", "1"); } catch (e) { }
+            setTimeout(function () { if (intro) { intro.remove(); intro = null; } startPage(); }, 750);
+        }
+        if (intro) {
+            var t = setTimeout(closeIntro, 3000);
+            var skip = document.getElementById("fxSkip");
+            if (skip) skip.addEventListener("click", function (e) { e.stopPropagation(); clearTimeout(t); closeIntro(); });
+            intro.addEventListener("click", function () { clearTimeout(t); closeIntro(); });
+        } else { startPage(); }
 
-            matchCards.forEach(card => {
-                const text = (card.dataset.search || "").toLocaleLowerCase("tr-TR");
-                const nameMatches = !query || text.includes(query);
-                const statusMatches =
-                    selectedStatus === "all" || card.dataset.status === selectedStatus;
+        // ---- Skor tablosu: aç/kapa + filtre ----
+        document.querySelectorAll(".sb-row").forEach(function (row) {
+            var main = row.querySelector(".sb-main");
+            var ev = row.querySelector(".sb-events");
+            function toggle() {
+                var open = row.classList.toggle("open");
+                main.setAttribute("aria-expanded", open ? "true" : "false");
+                if (ev) ev.hidden = !open;
+            }
+            main.addEventListener("click", toggle);
+            main.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+        });
 
-                const show = nameMatches && statusMatches;
-                card.hidden = !show;
+        var tabs = document.querySelectorAll(".sb-tab");
+        tabs.forEach(function (tab) {
+            tab.addEventListener("click", function () {
+                var f = tab.dataset.f;
+                tabs.forEach(function (x) { x.classList.toggle("active", x === tab); });
+                document.querySelectorAll(".sb-row").forEach(function (r) { r.style.display = (f === "all" || r.dataset.status === f) ? "" : "none"; });
+                document.querySelectorAll(".sb-block").forEach(function (b) {
+                    var any = Array.prototype.some.call(b.querySelectorAll(".sb-row"), function (r) { return r.style.display !== "none"; });
+                    b.style.display = any ? "" : "none";
+                });
+            });
+        });
 
-                if (show) visible++;
+        function runPage() {
+            // ---- Reveal ----
+            var items = document.querySelectorAll(".reveal");
+            if ("IntersectionObserver" in window) {
+                var io = new IntersectionObserver(function (entries) {
+                    entries.forEach(function (en) {
+                        if (en.isIntersecting) {
+                            en.target.classList.add("in");
+                            io.unobserve(en.target);
+                            en.target.querySelectorAll("[data-w]").forEach(function (b) { b.style.width = b.dataset.w + "%"; });
+                        }
+                    });
+                }, { threshold: 0.08 });
+                items.forEach(function (el) { io.observe(el); });
+            } else {
+                items.forEach(function (el) { el.classList.add("in"); });
+                document.querySelectorAll("[data-w]").forEach(function (b) { b.style.width = b.dataset.w + "%"; });
+            }
+
+            // ---- Sayaçlar ----
+            document.querySelectorAll(".js-count").forEach(function (el) {
+                var target = parseFloat(String(el.dataset.target).replace(",", ".")) || 0;
+                var dec = parseInt(el.dataset.dec || "0", 10);
+                var start = null, dur = 1300;
+                function step(ts) {
+                    if (start === null) start = ts;
+                    var p = Math.min(1, (ts - start) / dur), e = 1 - Math.pow(1 - p, 3);
+                    el.textContent = (target * e).toFixed(dec);
+                    if (p < 1) requestAnimationFrame(step);
+                }
+                requestAnimationFrame(step);
             });
 
-            if (visibleCount) visibleCount.textContent = visible;
-            if (noResults) noResults.hidden = visible !== 0;
-        }
+            // ---- Grafikler ----
+            if (typeof Chart === "undefined") return;
+            Chart.defaults.color = "#91ad9d";
+            Chart.defaults.font.family = "Barlow, sans-serif";
+            Chart.defaults.animation.duration = 1400;
+            Chart.defaults.animation.easing = "easeOutQuart";
+            var grid = "rgba(145,173,157,.12)";
+            var noLegend = { legend: { display: false }, tooltip: { displayColors: false } };
 
-        searchInput?.addEventListener("input", applyFilters);
-        statusSelect?.addEventListener("change", applyFilters);
+            var cMin = document.getElementById("chMinutes");
+            if (cMin) new Chart(cMin, {
+                type: "bar",
+                data: { labels: @Html.Raw(ToJson(minLabels)), datasets: [{ label: "Gol", data: @Html.Raw(ToJson(minBuckets)), backgroundColor: ["#4dd9a0", "#6fe38a", "#b8ff3b", "#ffd166", "#43e0a0", "#ff9f6e"], borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: noLegend,
+                    scales: { x: { grid: { display: false }, border: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: grid }, border: { display: false } } } }
+            });
 
-        // İki grafik
-        if (typeof Chart !== "undefined") {
-            Chart.defaults.color = "#8fa2bf";
-            Chart.defaults.font.family = "Inter, sans-serif";
+            var cRes = document.getElementById("chResults");
+            if (cRes) new Chart(cRes, {
+                type: "doughnut",
+                data: { labels: ["Ev sahibi galibiyeti", "Beraberlik", "Deplasman galibiyeti"], datasets: [{ data: [@homeW, @drawN, @awayW], backgroundColor: ["#b8ff3b", "#ffd166", "#43e0a0"], borderColor: "#0b1d17", borderWidth: 4, hoverOffset: 8 }] },
+                options: { responsive: true, maintainAspectRatio: false, cutout: "66%", plugins: { legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 8, padding: 16 } } } }
+            });
 
-            const tooltipOptions = {
-                backgroundColor: "#17243a",
-                titleColor: "#ffffff",
-                bodyColor: "#edf3fc",
-                padding: 11,
-                cornerRadius: 8
-            };
+            var cGoals = document.getElementById("chGoals");
+            if (cGoals) new Chart(cGoals, {
+                type: "bar",
+                data: { labels: @Html.Raw(ToJson(goalLabels)), datasets: [{ label: "Gol", data: @Html.Raw(ToJson(goalValues)), backgroundColor: @Html.Raw(ToJson(goalColors)), borderRadius: 8, borderSkipped: false, maxBarThickness: 40 }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: noLegend,
+                    scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 50, minRotation: 0, font: { size: 10 } } }, y: { beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: grid }, border: { display: false } } } }
+            });
 
-            const teamLabels = @Html.Raw(JsonSerializer.Serialize(teamLabels));
-            const teamGoalValues = @Html.Raw(JsonSerializer.Serialize(teamGoals));
-            const outcomeLabels = @Html.Raw(JsonSerializer.Serialize(outcomeLabels));
-            const outcomeValues = @Html.Raw(JsonSerializer.Serialize(outcomeValues));
+            var cSc = document.getElementById("chScorers");
+            if (cSc) new Chart(cSc, {
+                type: "bar",
+                data: { labels: @Html.Raw(ToJson(scorers.Select(x => x.Name).ToList())), datasets: [{ label: "Gol", data: @Html.Raw(ToJson(scorers.Select(x => x.Count).ToList())), backgroundColor: "#b8ff3b", borderRadius: 7, borderSkipped: false, maxBarThickness: 24 }] },
+                options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: noLegend,
+                    scales: { x: { beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: grid }, border: { display: false } }, y: { grid: { display: false }, border: { display: false } } } }
+            });
 
-            const teamCanvas = document.getElementById("teamGoalsChart");
+            var cCards = document.getElementById("chCards");
+            if (cCards) new Chart(cCards, {
+                type: "bar",
+                data: { labels: @Html.Raw(ToJson(teamCards.Select(x => x.Team).ToList())), datasets: [
+                    { label: "Sarı", data: @Html.Raw(ToJson(teamCards.Select(x => x.Y).ToList())), backgroundColor: "#ffd166", borderRadius: 5, stack: "c" },
+                    { label: "Kırmızı", data: @Html.Raw(ToJson(teamCards.Select(x => x.R).ToList())), backgroundColor: "#ff5964", borderRadius: 5, stack: "c" }] },
+                options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 8, padding: 14 } } },
+                    scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: grid }, border: { display: false } }, y: { stacked: true, grid: { display: false }, border: { display: false }, ticks: { font: { size: 11 } } } } }
+            });
 
-            if (teamCanvas) {
-                new Chart(teamCanvas, {
-                    type: "bar",
-                    data: {
-                        labels: teamLabels,
-                        datasets: [{
-                            label: "Gol",
-                            data: teamGoalValues,
-                            backgroundColor: "#5794ff",
-                            hoverBackgroundColor: "#45d5d1",
-                            borderRadius: 6,
-                            borderSkipped: false,
-                            maxBarThickness: 25
-                        }]
-                    },
-                    options: {
-                        indexAxis: "y",
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: tooltipOptions
-                        },
-                        scales: {
-                            x: {
-                                beginAtZero: true,
-                                ticks: { precision: 0, stepSize: 1 },
-                                grid: { color: "rgba(143,162,191,.12)" },
-                                border: { display: false }
-                            },
-                            y: {
-                                grid: { display: false },
-                                border: { display: false }
-                            }
-                        }
-                    }
-                });
-            }
-
-            const outcomeCanvas = document.getElementById("outcomesChart");
-
-            if (outcomeCanvas) {
-                new Chart(outcomeCanvas, {
-                    type: "doughnut",
-                    data: {
-                        labels: outcomeLabels,
-                        datasets: [{
-                            data: outcomeValues,
-                            backgroundColor: ["#5794ff", "#45d5d1", "#a78bfa"],
-                            borderColor: "#121c2e",
-                            borderWidth: 4,
-                            hoverOffset: 7
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        cutout: "67%",
-                        plugins: {
-                            legend: {
-                                position: "bottom",
-                                labels: {
-                                    usePointStyle: true,
-                                    pointStyle: "circle",
-                                    padding: 16,
-                                    boxWidth: 8,
-                                    font: { size: 10 }
-                                }
-                            },
-                            tooltip: tooltipOptions
-                        }
-                    }
-                });
-            }
-        }
-
-        // Oyuncu istatistikleri: seçili haftanın maç detaylarından toplanır.
-        const matchIds = @Html.Raw(JsonSerializer.Serialize(matchIds));
-        const scorers = new Map();
-        const redCards = new Map();
-
-        const scorerContainer = document.getElementById("topScorers");
-        const redCardContainer = document.getElementById("redCardLeaders");
-
-        function addStat(map, player, team) {
-            const key = `${player}|||${team || ""}`;
-            const current = map.get(key) || {
-                player: player,
-                team: team || "Takım belirtilmedi",
-                count: 0
-            };
-
-            current.count++;
-            map.set(key, current);
-        }
-
-        function escapeHtml(value) {
-            return String(value ?? "").replace(/[&<>"']/g, character => ({
-                "&": "&amp;",
-                "<": "&lt;",
-                ">": "&gt;",
-                '"': "&quot;",
-                "'": "&#39;"
-            }[character]));
-        }
-
-        function renderLeaders(container, map, type, emptyMessage) {
-            if (!container) return;
-
-            const leaders = Array.from(map.values())
-                .sort((a, b) => b.count - a.count || a.player.localeCompare(b.player, "tr"))
-                .slice(0, 5);
-
-            if (!leaders.length) {
-                container.innerHTML = `<div class="empty-message">${escapeHtml(emptyMessage)}</div>`;
-                return;
-            }
-
-            container.innerHTML = leaders.map((player, index) => {
-                const initial = (player.player || "?")
-                    .trim()
-                    .charAt(0)
-                    .toLocaleUpperCase("tr-TR");
-
-                return `
-                    <div class="leader-row">
-                        <span class="rank ${index === 0 ? "first" : ""}">${index + 1}</span>
-                        <span class="player-avatar">${escapeHtml(initial)}</span>
-                        <div class="player-info">
-                            <div class="player-name">${escapeHtml(player.player)}</div>
-                            <div class="player-team">${escapeHtml(player.team)}</div>
-                        </div>
-                        <strong class="player-value ${type === "card" ? "card" : ""}">
-                            ${player.count}
-                        </strong>
-                    </div>`;
-            }).join("");
-        }
-
-        if (matchIds.length) {
-            const apiBase = "https://localhost:7009/api/Matches/";
-            let apiFailed = false;
-
-            await Promise.all(matchIds.map(async id => {
-                try {
-                    const response = await fetch(apiBase + encodeURIComponent(id));
-
-                    if (!response.ok) {
-                        apiFailed = true;
-                        return;
-                    }
-
-                    const match = await response.json();
-
-                    (match.goals || []).forEach(goal => {
-                        if (goal.playerName) {
-                            addStat(scorers, goal.playerName, goal.team);
-                        }
-                    });
-
-                    (match.cards || []).forEach(card => {
-                        const cardType = String(card.cardType || "")
-                            .toLocaleLowerCase("tr-TR");
-
-                        if (cardType.includes("kırmızı") && card.playerName) {
-                            addStat(redCards, card.playerName, card.team);
-                        }
-                    });
-                } catch (error) {
-                    apiFailed = true;
-                    console.warn("Oyuncu istatistikleri alınamadı:", id, error);
-                }
-            }));
-
-            renderLeaders(
-                scorerContainer,
-                scorers,
-                "goal",
-                apiFailed
-                    ? "Oyuncu verileri alınamadı. API adresini ve CORS ayarlarını kontrol et."
-                    : "Bu haftanın maç detaylarında golcü kaydı bulunamadı."
-            );
-
-            renderLeaders(
-                redCardContainer,
-                redCards,
-                "card",
-                apiFailed
-                    ? "Kart verileri alınamadı. API adresini ve CORS ayarlarını kontrol et."
-                    : "Bu haftanın maç detaylarında kırmızı kart kaydı bulunamadı."
-            );
-        } else {
-            renderLeaders(
-                scorerContainer,
-                scorers,
-                "goal",
-                "Gol krallığı için tamamlanmış maç bulunmuyor."
-            );
-
-            renderLeaders(
-                redCardContainer,
-                redCards,
-                "card",
-                "Kart raporu için tamamlanmış maç bulunmuyor."
-            );
+            var cSt = document.getElementById("chStandings");
+            if (cSt) new Chart(cSt, {
+                type: "bar",
+                data: { labels: @Html.Raw(ToJson(stLabels)), datasets: [{ label: "Puan", data: @Html.Raw(ToJson(stPoints)), backgroundColor: function (c) { var i = c.dataIndex; return i < 4 ? "#b8ff3b" : (i < 6 ? "#43e0a0" : "#2f6b52"); }, borderRadius: 7, borderSkipped: false, maxBarThickness: 22 }] },
+                options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: noLegend,
+                    scales: { x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: grid }, border: { display: false } }, y: { grid: { display: false }, border: { display: false }, ticks: { font: { size: 11 } } } } }
+            });
         }
     });
 </script>
-```

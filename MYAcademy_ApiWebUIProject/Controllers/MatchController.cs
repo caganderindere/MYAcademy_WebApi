@@ -1,5 +1,4 @@
-﻿
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using System.Net.Http.Json;
 using SerieA.WebUI.ViewModels;
 
@@ -14,22 +13,39 @@ namespace SerieA.WebUI.Controllers
             _httpClientFactory = httpClientFactory;
         }
 
-        public IHttpClientFactory HttpClientFactory => _httpClientFactory;
-
+        [HttpGet]
         public async Task<IActionResult> Detail(int id)
         {
-            var client = HttpClientFactory.CreateClient("SerieAApi");
-
-            var match = await client.GetFromJsonAsync<MatchDetailViewModel>(
-                $"api/Matches/{id}"
-            );
-
-            if (match == null)
-            {
+            if (id <= 0)
                 return NotFound();
-            }
 
-            return View(match);
+            var client = _httpClientFactory.CreateClient("SerieAApi");
+
+            try
+            {
+                var match = await client.GetFromJsonAsync<MatchDetailViewModel>(
+                    $"api/Matches/{id}"
+                );
+
+                if (match == null)
+                    return NotFound();
+
+                return View("Detail", match);
+            }
+            catch (HttpRequestException)
+            {
+                return StatusCode(
+                    502,
+                    "Maç bilgilerine ulaşılırken API bağlantı hatası oluştu."
+                );
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                return StatusCode(
+                    502,
+                    "API'den gelen maç verileri okunamadı."
+                );
+            }
         }
     }
 }

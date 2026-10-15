@@ -1,5 +1,4 @@
-﻿
-namespace SerieA.WebUI.ViewModels
+﻿namespace SerieA.WebUI.ViewModels
 {
     public class MatchDetailViewModel
     {
@@ -10,6 +9,9 @@ namespace SerieA.WebUI.ViewModels
         public string HomeTeam { get; set; } = "";
         public string AwayTeam { get; set; } = "";
 
+        public string HomeTeamLogoUrl { get; set; } = "";
+        public string AwayTeamLogoUrl { get; set; } = "";
+
         public int? HomeScore { get; set; }
         public int? AwayScore { get; set; }
 
@@ -18,7 +20,9 @@ namespace SerieA.WebUI.ViewModels
         public string Stadium { get; set; } = "";
 
         public List<MatchGoalViewModel> Goals { get; set; } = new();
+
         public List<MatchCardViewModel> Cards { get; set; } = new();
+
         public List<MatchSubstitutionViewModel> Substitutions { get; set; } = new();
     }
 

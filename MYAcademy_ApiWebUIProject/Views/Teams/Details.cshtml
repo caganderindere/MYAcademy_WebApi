@@ -1,5 +1,4 @@
-﻿```cshtml
-@model SerieA.WebUI.Controllers.TeamDetailViewModel
+﻿@model SerieA.WebUI.Controllers.TeamDetailViewModel
 
 @{
     ViewData["Title"] = Model.Name + " | Takım Detayı";
@@ -77,21 +76,168 @@
     int formLosses = lastFiveMatches.Count(x => x.Result == "M");
 }
 
+<header class="mk-bar">
+    <div class="mk-bar-in">
+        <a class="mk-brand" href="@Url.Action("Index", "Fixtures")">
+            <span class="m">⚽</span>
+            <b>MATCH<span>DAY</span></b>
+        </a>
+
+        <nav class="mk-nav">
+            <a href="@Url.Action("Index", "Fixtures")">Fikstür</a>
+            <a href="@Url.Action("Index", "Fixtures")#skor">Skorlar</a>
+            <a href="@Url.Action("Index", "Fixtures")#analiz">Analiz</a>
+            <a href="@Url.Action("Index", "Fixtures")#puan">Puan Durumu</a>
+            <a href="@Url.Action("Index", "Standings")">Tam Tablo</a>
+        </nav>
+
+        <div class="mk-right">
+            <span class="mk-league">🇮🇹 SERIE A</span>
+            <span class="mk-clock" id="mkClock">--:--:--</span>
+        </div>
+    </div>
+</header>
+
 <style>
+    html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #06110e !important;
+        color: #f2f8f3 !important;
+    }
+
+    /* ===== MATCHDAY ÜST MENÜ ===== */
+    .mk-bar {
+        position: sticky;
+        top: 0;
+        z-index: 9999;
+        width: 100%;
+        border-bottom: 1px solid #1d3a2c;
+        background: rgba(5,16,12,.96);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 8px 30px rgba(0,0,0,.28);
+    }
+
+    .mk-bar-in {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        width: min(1320px, calc(100% - 36px));
+        min-height: 62px;
+        margin: auto;
+    }
+
+    .mk-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: #fff;
+        text-decoration: none;
+        font-family: Arial, sans-serif;
+        font-size: 1.7rem;
+        font-weight: 800;
+        letter-spacing: -.02em;
+        white-space: nowrap;
+    }
+
+        .mk-brand .m {
+            display: grid;
+            place-items: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #c7ff61, #43e0a0);
+            color: #06110e;
+            font-size: 1.2rem;
+            box-shadow: 0 0 22px rgba(184,255,59,.25);
+        }
+
+        .mk-brand b span {
+            color: #b8ff3b;
+        }
+
+    .mk-nav {
+        display: flex;
+        gap: 4px;
+        margin-left: 10px;
+    }
+
+        .mk-nav a {
+            position: relative;
+            padding: 21px 14px;
+            color: #9fb8a8;
+            text-decoration: none;
+            font-size: .85rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            transition: color .2s, background .2s;
+        }
+
+            .mk-nav a:hover {
+                color: #fff;
+            }
+
+            .mk-nav a.active {
+                color: #b8ff3b;
+            }
+
+                .mk-nav a.active::after {
+                    content: "";
+                    position: absolute;
+                    left: 14px;
+                    right: 14px;
+                    bottom: 0;
+                    height: 3px;
+                    border-radius: 3px 3px 0 0;
+                    background: #b8ff3b;
+                    box-shadow: 0 0 14px #b8ff3b;
+                }
+
+    .mk-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-left: auto;
+    }
+
+    .mk-league {
+        padding: 7px 12px;
+        border: 1px solid #294b39;
+        border-radius: 999px;
+        color: #d7ff9a;
+        font-size: .74rem;
+        font-weight: 800;
+        letter-spacing: .12em;
+        white-space: nowrap;
+    }
+
+    .mk-clock {
+        min-width: 66px;
+        padding: 7px 10px;
+        border-radius: 10px;
+        background: #0a1f16;
+        color: #b8ff3b;
+        font-size: 1.05rem;
+        font-weight: 700;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+    }
+
     .team-page {
-        --bg: #07101f;
-        --panel: #101e36;
-        --line: #233653;
-        --text: #edf3ff;
-        --muted: #94a6c6;
-        --blue: #347cff;
-        --green: #1fc98a;
-        --yellow: #e5b341;
-        --red: #f2475c;
+        --bg: #06110e;
+        --panel: #0d2118;
+        --line: #244638;
+        --text: #f2f8f3;
+        --muted: #91ad9d;
+        --blue: #43e0a0;
+        --green: #43e0a0;
+        --yellow: #ffd166;
+        --red: #ff5964;
         min-height: 100vh;
-        margin: -1.5rem;
+        margin: 0;
         padding: 30px 20px 60px;
-        background: radial-gradient(ellipse at 10% 0%, #152c50 0, transparent 45%), var(--bg);
+        background: radial-gradient(ellipse at 10% 0%, #123f2a 0, transparent 45%), radial-gradient(ellipse at 90% 20%, rgba(67,224,160,.10), transparent 38%), var(--bg);
         color: var(--text);
         font-family: Arial, sans-serif;
     }
@@ -105,7 +251,7 @@
     .team-back {
         display: inline-block;
         margin-bottom: 18px;
-        color: #a9c9ff;
+        color: #b9f5d7;
         text-decoration: none;
         font-size: 14px;
     }
@@ -121,7 +267,7 @@
         padding: 34px;
         border: 1px solid var(--line);
         border-radius: 20px;
-        background: linear-gradient(130deg, #142b4d, #101e36 70%);
+        background: linear-gradient(135deg, #03271b 0%, #075c3d 58%, #00a968 100%);
     }
 
     .team-logo {
@@ -144,13 +290,13 @@
         }
 
     .team-logo-placeholder {
-        color: #a9c9ff;
+        color: #b9f5d7;
         font-size: 28px;
         font-weight: 800;
     }
 
     .team-eyebrow {
-        color: #83b2ff;
+        color: #79e5b5;
         font-size: 12px;
         font-weight: 700;
         letter-spacing: 2px;
@@ -173,15 +319,15 @@
         margin-top: 14px;
         padding: 6px 11px;
         border-radius: 999px;
-        background: #1fc98a1a;
-        color: #48e0a6;
+        background: rgba(67,224,160,.10);
+        color: #43e0a0;
         font-size: 12px;
         font-weight: 700;
     }
 
         .team-status.inactive {
-            background: #f2475c1a;
-            color: #ff7180;
+            background: rgba(255,89,100,.10);
+            color: #ff7d89;
         }
 
     .team-stats {
@@ -669,4 +815,20 @@
 
     </div>
 </main>
-```
+
+<script>
+    (function () {
+        function updateMkClock() {
+            const el = document.getElementById("mkClock");
+            if (!el) return;
+            el.textContent = new Date().toLocaleTimeString("tr-TR", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            });
+        }
+        updateMkClock();
+        setInterval(updateMkClock, 1000);
+    })();
+</script>
+ss

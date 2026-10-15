@@ -1,1194 +1,2125 @@
 ﻿@model SerieA.WebUI.ViewModels.MatchDetailViewModel
-@using System.Linq
-@using System.Globalization
 
 @{
-    ViewData["Title"] = $"{Model.HomeTeam} - {Model.AwayTeam} | Maç Analizi";
+    ViewData["Title"] = "Maç Merkezi";
 
     var goals = Model.Goals ?? new List<SerieA.WebUI.ViewModels.MatchGoalViewModel>();
     var cards = Model.Cards ?? new List<SerieA.WebUI.ViewModels.MatchCardViewModel>();
     var substitutions = Model.Substitutions ?? new List<SerieA.WebUI.ViewModels.MatchSubstitutionViewModel>();
 
-    var home = Model.HomeTeam ?? "Ev Sahibi";
-    var away = Model.AwayTeam ?? "Deplasman";
-    var status = Model.Status ?? "";
-    var hasScore = Model.HomeScore.HasValue && Model.AwayScore.HasValue;
+    var allEvents = new List<dynamic>();
 
-    var finished = status.Contains("Tamamlandı", StringComparison.OrdinalIgnoreCase)
-        || status.Contains("Bitti", StringComparison.OrdinalIgnoreCase);
-
-    var homeGoals = goals.Count(x => string.Equals(x.Team, home, StringComparison.OrdinalIgnoreCase));
-    var awayGoals = goals.Count(x => string.Equals(x.Team, away, StringComparison.OrdinalIgnoreCase));
-
-    var homeYellow = cards.Count(x => string.Equals(x.Team, home, StringComparison.OrdinalIgnoreCase)
-        && (x.CardType ?? "").Contains("Sarı", StringComparison.OrdinalIgnoreCase));
-    var awayYellow = cards.Count(x => string.Equals(x.Team, away, StringComparison.OrdinalIgnoreCase)
-        && (x.CardType ?? "").Contains("Sarı", StringComparison.OrdinalIgnoreCase));
-
-    var homeRed = cards.Count(x => string.Equals(x.Team, home, StringComparison.OrdinalIgnoreCase)
-        && (x.CardType ?? "").Contains("Kırmızı", StringComparison.OrdinalIgnoreCase));
-    var awayRed = cards.Count(x => string.Equals(x.Team, away, StringComparison.OrdinalIgnoreCase)
-        && (x.CardType ?? "").Contains("Kırmızı", StringComparison.OrdinalIgnoreCase));
-
-    var totalGoals = hasScore ? Model.HomeScore.GetValueOrDefault() + Model.AwayScore.GetValueOrDefault() : goals.Count;
-    var totalCards = cards.Count;
-    var totalSubs = substitutions.Count;
-
-    var homeInitial = string.IsNullOrWhiteSpace(home) ? "H" : home.Substring(0, 1).ToUpperInvariant();
-    var awayInitial = string.IsNullOrWhiteSpace(away) ? "D" : away.Substring(0, 1).ToUpperInvariant();
-
-    var events = new List<(int Minute, string Type, string Player, string Detail, string Team)>();
-
-    foreach (var goal in goals)
-        events.Add((goal.Minute, "goal", goal.PlayerName ?? "Bilinmeyen oyuncu", "Gol", goal.Team ?? ""));
-
-    foreach (var card in cards)
-        events.Add((card.Minute, "card", card.PlayerName ?? "Bilinmeyen oyuncu", card.CardType ?? "Kart", card.Team ?? ""));
-
-    foreach (var sub in substitutions)
-        events.Add((sub.Minute, "sub", sub.PlayerIn ?? "Bilinmeyen oyuncu",
-            "Oyundan çıkan: " + (sub.PlayerOut ?? "-"), sub.Team ?? ""));
-
-    events = events.OrderBy(x => x.Minute).ToList();
-
-    var goalBuckets = new int[6];
     foreach (var goal in goals)
     {
-        var bucket = Math.Min(5, Math.Max(0, goal.Minute / 15));
-        goalBuckets[bucket]++;
+        allEvents.Add(new
+        {
+            Type = "goal",
+            Minute = goal.Minute,
+            Player = goal.PlayerName,
+            Team = goal.Team,
+            CardType = "",
+            PlayerOut = "",
+            PlayerIn = ""
+        });
     }
 
-    var goalBucketLabels = new[] { "0–14", "15–29", "30–44", "45–59", "60–74", "75+" };
-    var goalBucketMax = Math.Max(1, goalBuckets.DefaultIfEmpty(0).Max());
+    foreach (var card in cards)
+    {
+        allEvents.Add(new
+        {
+            Type = card.CardType?.ToLower().Contains("kırmızı") == true ||
+                   card.CardType?.ToLower().Contains("red") == true
+                   ? "redcard"
+                   : "yellowcard",
+            Minute = card.Minute,
+            Player = card.PlayerName,
+            Team = card.Team,
+            CardType = card.CardType,
+            PlayerOut = "",
+            PlayerIn = ""
+        });
+    }
 
-    var homeGoalPercent = totalGoals == 0 ? 0 : (int)Math.Round(homeGoals * 100.0 / Math.Max(1, homeGoals + awayGoals));
-    var awayGoalPercent = totalGoals == 0 ? 0 : 100 - homeGoalPercent;
+    foreach (var sub in substitutions)
+    {
+        allEvents.Add(new
+        {
+            Type = "substitution",
+            Minute = sub.Minute,
+            Player = "",
+            Team = sub.Team,
+            CardType = "",
+            PlayerOut = sub.PlayerOut,
+            PlayerIn = sub.PlayerIn
+        });
+    }
 
-    var totalYellows = homeYellow + awayYellow;
-    var totalReds = homeRed + awayRed;
+    allEvents = allEvents
+        .OrderBy(x => x.Minute)
+        .ToList();
+
+    var homeGoals = goals.Count(x => x.Team == Model.HomeTeam);
+    var awayGoals = goals.Count(x => x.Team == Model.AwayTeam);
+
+    var homeYellowCards = cards.Count(x =>
+        x.Team == Model.HomeTeam &&
+        (
+            x.CardType?.ToLower().Contains("sarı") == true ||
+            x.CardType?.ToLower().Contains("yellow") == true
+        ));
+
+    var awayYellowCards = cards.Count(x =>
+        x.Team == Model.AwayTeam &&
+        (
+            x.CardType?.ToLower().Contains("sarı") == true ||
+            x.CardType?.ToLower().Contains("yellow") == true
+        ));
+
+    var homeRedCards = cards.Count(x =>
+        x.Team == Model.HomeTeam &&
+        (
+            x.CardType?.ToLower().Contains("kırmızı") == true ||
+            x.CardType?.ToLower().Contains("red") == true
+        ));
+
+    var awayRedCards = cards.Count(x =>
+        x.Team == Model.AwayTeam &&
+        (
+            x.CardType?.ToLower().Contains("kırmızı") == true ||
+            x.CardType?.ToLower().Contains("red") == true
+        ));
+
+    var homeSubs = substitutions.Count(x => x.Team == Model.HomeTeam);
+    var awaySubs = substitutions.Count(x => x.Team == Model.AwayTeam);
+
+    var totalGoals = goals.Count;
+    var totalCards = cards.Count;
+    var totalSubs = substitutions.Count;
+    var totalEvents = allEvents.Count;
+
+    var homeScore = Model.HomeScore ?? homeGoals;
+    var awayScore = Model.AwayScore ?? awayGoals;
+
+    string resultText;
+
+    if (Model.Status?.ToLower().Contains("tamam") == true)
+    {
+        if (homeScore > awayScore)
+            resultText = $"{Model.HomeTeam} kazandı";
+        else if (awayScore > homeScore)
+            resultText = $"{Model.AwayTeam} kazandı";
+        else
+            resultText = "Maç berabere bitti";
+    }
+    else
+    {
+        resultText = Model.Status;
+    }
+
+    var resultClass =
+        homeScore > awayScore ? "home-win" :
+        awayScore > homeScore ? "away-win" :
+        "draw";
+
+    var firstGoal = goals
+        .OrderBy(x => x.Minute)
+        .FirstOrDefault();
+
+    var lastGoal = goals
+        .OrderByDescending(x => x.Minute)
+        .FirstOrDefault();
+
+    var uniquePlayers = goals
+        .Select(x => x.PlayerName)
+        .Concat(cards.Select(x => x.PlayerName))
+        .Concat(substitutions.SelectMany(x => new[] { x.PlayerOut, x.PlayerIn }))
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    var homeEvents = allEvents.Count(x => x.Team == Model.HomeTeam);
+    var awayEvents = allEvents.Count(x => x.Team == Model.AwayTeam);
+
+    var homeEventPercentage = totalEvents > 0
+        ? Math.Round((double)homeEvents / totalEvents * 100)
+        : 50;
+
+    var awayEventPercentage = totalEvents > 0
+        ? 100 - homeEventPercentage
+        : 50;
+
+    var homeGoalPercentage = totalGoals > 0
+        ? Math.Round((double)homeGoals / totalGoals * 100)
+        : 50;
+
+    var awayGoalPercentage = totalGoals > 0
+        ? 100 - homeGoalPercentage
+        : 50;
+
+    var dateText = Model.MatchDate.ToString(
+        "dd MMMM yyyy",
+        new System.Globalization.CultureInfo("tr-TR")
+    );
+
+    var homeInitial =
+        !string.IsNullOrWhiteSpace(Model.HomeTeam)
+            ? Model.HomeTeam.Substring(0, 1).ToUpper()
+            : "H";
+
+    var awayInitial =
+        !string.IsNullOrWhiteSpace(Model.AwayTeam)
+            ? Model.AwayTeam.Substring(0, 1).ToUpper()
+            : "A";
+
+    string LogoFallback(string logoUrl, string initial)
+    {
+        return string.IsNullOrWhiteSpace(logoUrl)
+            ? $"https://ui-avatars.com/api/?name={initial}&background=0b6b43&color=fff&bold=true&size=256"
+            : logoUrl;
+    }
 }
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
     :root {
-        --ma-bg: #07101f;
-        --ma-panel: #0e1b32;
-        --ma-panel2: #132442;
-        --ma-line: #233757;
-        --ma-text: #edf3ff;
-        --ma-muted: #91a5c8;
-        --ma-blue: #4d8dff;
-        --ma-cyan: #42d6e8;
-        --ma-green: #36d6a0;
-        --ma-yellow: #f4c451;
-        --ma-red: #ff6177;
-        --ma-purple: #a98bff;
+        --green: #00b86b;
+        --green-dark: #075c3d;
+        --green-deep: #03271b;
+        --green-soft: #e9fff5;
+        --black: #07110d;
+        --dark: #0b1712;
+        --dark2: #102119;
+        --card: #ffffff;
+        --text: #102019;
+        --muted: #718079;
+        --border: #e7eee9;
+        --red: #ef4444;
+        --yellow: #f4b400;
+    }
+
+    * {
+        box-sizing: border-box;
     }
 
     body {
-        background: var(--ma-bg) !important;
-        color: var(--ma-text);
-        font-family: "Barlow", sans-serif;
+        background: #06110e;
     }
 
-    .ma-page {
-        min-height: 100vh;
-        padding: 28px 0 60px;
-        background: radial-gradient(900px 440px at 0% 0%, rgba(77,141,255,.17), transparent 65%), radial-gradient(800px 400px at 100% 15%, rgba(66,214,232,.07), transparent 65%), var(--ma-bg);
+    .match-page {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 28px 18px 70px;
     }
 
-    .ma-shell {
-        width: min(1240px, calc(100% - 36px));
-        margin: auto;
-    }
+    /* TOP BAR */
 
-    .ma-back {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        margin-bottom: 18px;
-        color: #adc4e8;
-        font-weight: 600;
-        text-decoration: none;
-    }
-
-        .ma-back:hover {
-            color: white;
-        }
-
-    .ma-hero {
-        position: relative;
-        isolation: isolate;
-        overflow: hidden;
-        padding: 30px;
-        border: 1px solid #2a4267;
-        border-radius: 23px;
-        background: linear-gradient(135deg, #152e56, #0e1c36 65%, #0b172c);
-        box-shadow: 0 24px 65px rgba(0,0,0,.2);
-    }
-
-        .ma-hero::before {
-            content: "";
-            position: absolute;
-            z-index: -1;
-            inset: 0;
-            background: repeating-linear-gradient(90deg, transparent 0 75px, rgba(255,255,255,.018) 75px 76px);
-            pointer-events: none;
-        }
-
-        .ma-hero::after {
-            content: "";
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 65%;
-            height: 3px;
-            background: linear-gradient(90deg, var(--ma-blue), var(--ma-cyan), transparent);
-        }
-
-    .ma-hero-top, .ma-league, .ma-status, .ma-meta, .ma-section-head,
-    .ma-footer, .ma-team, .ma-filter-row {
+    .match-topbar {
+        background: linear-gradient(135deg, #031c13, #075b3d 55%, #00a968);
+        border-radius: 24px;
+        padding: 16px 22px;
+        color: white;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 12px;
+        box-shadow: 0 18px 45px rgba(3, 50, 34, .22);
+        position: relative;
+        overflow: hidden;
     }
 
-    .ma-league {
-        justify-content: flex-start;
-        color: #c4d6f5;
-        font-size: .8rem;
-        font-weight: 700;
-        letter-spacing: .13em;
-        text-transform: uppercase;
-    }
-
-    .ma-mark {
-        display: grid;
-        place-items: center;
-        width: 38px;
-        height: 38px;
-        border-radius: 11px;
-        background: linear-gradient(135deg, var(--ma-cyan), var(--ma-blue));
-        color: #07101f;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: 1.4rem;
-        font-weight: 800;
-    }
-
-    .ma-status {
-        justify-content: flex-start;
-        width: fit-content;
-        padding: 8px 12px;
-        border: 1px solid rgba(145,165,200,.24);
-        border-radius: 999px;
-        background: rgba(255,255,255,.04);
-        color: #c9d8ef;
-        font-size: .75rem;
-        font-weight: 700;
-    }
-
-        .ma-status.done {
-            color: #7debc2;
-            border-color: rgba(54,214,160,.3);
+        .match-topbar::after {
+            content: "";
+            position: absolute;
+            width: 280px;
+            height: 280px;
+            right: -100px;
+            top: -160px;
+            border-radius: 50%;
+            background: rgba(255,255,255,.08);
         }
 
-            .ma-status.done::before {
-                content: "";
-                width: 7px;
-                height: 7px;
-                border-radius: 50%;
-                background: var(--ma-green);
-            }
-
-    .ma-season {
-        color: #8fa9d1;
-        font-size: .82rem;
-    }
-
-    .ma-matchup {
-        display: grid;
-        grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+    .brand-area {
+        display: flex;
         align-items: center;
-        gap: 22px;
-        margin-top: 32px;
+        gap: 14px;
+        position: relative;
+        z-index: 2;
     }
 
-    .ma-team {
-        justify-content: flex-start;
-        min-width: 0;
-        gap: 16px;
+    .brand-ball {
+        width: 46px;
+        height: 46px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255,255,255,.13);
+        border: 1px solid rgba(255,255,255,.18);
+        font-size: 23px;
     }
 
-        .ma-team.away {
+    .brand-title {
+        font-weight: 900;
+        font-size: 20px;
+        letter-spacing: -.5px;
+    }
+
+    .brand-sub {
+        font-size: 11px;
+        opacity: .65;
+        margin-top: 2px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+    }
+
+    .live-clock {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 10px 15px;
+        border-radius: 12px;
+        background: rgba(0,0,0,.18);
+        font-weight: 700;
+        font-size: 13px;
+    }
+
+    .live-dot {
+        width: 8px;
+        height: 8px;
+        background: #5dffad;
+        border-radius: 50%;
+        box-shadow: 0 0 12px #5dffad;
+        animation: pulse 1.5s infinite;
+    }
+
+    @@keyframes pulse {
+        50% {
+            opacity: .35;
+            transform: scale(.7);
+        }
+    }
+
+    /* MATCH HERO */
+
+    .match-hero {
+        margin-top: 18px;
+        border-radius: 30px;
+        overflow: hidden;
+        background: linear-gradient(135deg, rgba(3,28,19,.98), rgba(7,91,61,.96));
+        color: white;
+        position: relative;
+        box-shadow: 0 25px 65px rgba(3, 46, 31, .24);
+    }
+
+        .match-hero::before {
+            content: "";
+            position: absolute;
+            width: 650px;
+            height: 650px;
+            border: 1px solid rgba(255,255,255,.06);
+            border-radius: 50%;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%,-50%);
+        }
+
+    .hero-content {
+        position: relative;
+        z-index: 2;
+        padding: 30px 35px 35px;
+    }
+
+    .match-meta {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 25px;
+    }
+
+    .meta-pill {
+        background: rgba(255,255,255,.09);
+        border: 1px solid rgba(255,255,255,.12);
+        padding: 8px 13px;
+        border-radius: 999px;
+        font-size: 12px;
+        color: rgba(255,255,255,.84);
+    }
+
+    .status-pill {
+        background: #00c875;
+        color: #03271b;
+        font-weight: 900;
+    }
+
+    .teams-row {
+        display: grid;
+        grid-template-columns: 1fr 230px 1fr;
+        align-items: center;
+        gap: 25px;
+    }
+
+    .team-box {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+    }
+
+        .team-box.away {
             flex-direction: row-reverse;
             text-align: right;
         }
 
-    .ma-crest {
-        display: grid;
-        place-items: center;
-        flex: 0 0 76px;
-        width: 76px;
-        height: 76px;
-        border: 1px solid rgba(173,196,232,.28);
-        border-radius: 50%;
-        background: linear-gradient(145deg, #244b85, #0b1b34);
-        box-shadow: inset 0 0 22px rgba(77,141,255,.16), 0 12px 24px rgba(0,0,0,.18);
-        color: white;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: 2rem;
+    .team-logo {
+        width: 110px;
+        height: 110px;
+        border-radius: 28px;
+        padding: 13px;
+        object-fit: contain;
+        background: rgba(255,255,255,.97);
+        box-shadow: 0 15px 35px rgba(0,0,0,.25), inset 0 0 0 1px rgba(0,0,0,.04);
+        transition: .3s ease;
+    }
+
+        .team-logo:hover {
+            transform: translateY(-5px) scale(1.04);
+        }
+
+    .team-name {
+        font-size: clamp(21px, 2vw, 31px);
+        font-weight: 950;
+        letter-spacing: -1px;
+    }
+
+    .team-code {
+        margin-top: 5px;
+        font-size: 11px;
+        color: rgba(255,255,255,.48);
         font-weight: 800;
+        letter-spacing: 2px;
     }
 
-    .ma-team.away .ma-crest {
-        background: linear-gradient(145deg, #384766, #101b31);
-    }
-
-    .ma-team-label {
-        display: block;
-        margin-bottom: 8px;
-        color: #8fa9d1;
-        font-size: .7rem;
-        font-weight: 700;
-        letter-spacing: .12em;
-    }
-
-    .ma-team-name {
-        margin: 0;
-        color: white;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: clamp(1.5rem, 3vw, 2.7rem);
-        font-weight: 800;
-        line-height: 1;
-        overflow-wrap: anywhere;
-    }
-
-    .ma-scoreboard {
+    .score-box {
         text-align: center;
     }
 
-    .ma-score {
-        color: white;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: clamp(3.2rem, 7vw, 5.5rem);
+    .score {
+        font-size: clamp(50px, 7vw, 82px);
+        font-weight: 950;
+        letter-spacing: -6px;
+        line-height: .9;
+    }
+
+    .score-separator {
+        margin: 0 5px;
+        opacity: .3;
+    }
+
+    .result-text {
+        margin-top: 14px;
+        font-size: 12px;
         font-weight: 800;
-        line-height: 1;
-        white-space: nowrap;
+        color: #78ffbd;
     }
 
-        .ma-score span {
-            color: var(--ma-cyan);
-            padding: 0 5px;
-        }
-
-    .ma-vs {
-        color: #c5d6f3;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: 2rem;
-        font-weight: 800;
-    }
-
-    .ma-time {
-        margin-top: 9px;
-        color: #91a9cf;
-        font-size: .85rem;
-    }
-
-    .ma-meta {
+    .match-info {
+        display: flex;
         justify-content: center;
+        gap: 10px;
         flex-wrap: wrap;
-        margin-top: 27px;
-        padding-top: 18px;
-        border-top: 1px solid rgba(145,165,200,.16);
-        color: #a9bfdf;
-        font-size: .84rem;
+        margin-top: 25px;
     }
 
-    .ma-kpis {
+    .info-item {
+        padding: 9px 14px;
+        border-radius: 12px;
+        background: rgba(0,0,0,.15);
+        font-size: 12px;
+        color: rgba(255,255,255,.75);
+    }
+
+    /* KPI */
+
+    .kpi-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0,1fr));
-        gap: 13px;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
         margin-top: 18px;
     }
 
-    .ma-kpi {
+    .kpi {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 18px;
+        box-shadow: 0 8px 25px rgba(16,32,25,.05);
         position: relative;
         overflow: hidden;
-        padding: 19px;
-        border: 1px solid var(--ma-line);
-        border-radius: 16px;
-        background: linear-gradient(145deg, var(--ma-panel), #0b172b);
     }
 
-        .ma-kpi::after {
+        .kpi::after {
             content: "";
             position: absolute;
-            right: -18px;
-            bottom: -30px;
-            width: 85px;
-            height: 85px;
+            right: -25px;
+            bottom: -35px;
+            width: 90px;
+            height: 90px;
+            background: var(--green-soft);
             border-radius: 50%;
-            background: var(--kpi-glow, rgba(77,141,255,.12));
-            filter: blur(3px);
         }
 
-    .ma-kpi-label {
-        display: block;
-        color: var(--ma-muted);
-        font-size: .79rem;
-        font-weight: 600;
+    .kpi-icon {
+        font-size: 21px;
     }
 
-    .ma-kpi-value {
-        display: block;
+    .kpi-value {
         margin-top: 7px;
-        color: white;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: 2.15rem;
+        font-size: 27px;
+        font-weight: 950;
+        color: var(--green-dark);
+    }
+
+    .kpi-label {
+        color: var(--muted);
+        font-size: 11px;
         font-weight: 800;
-        line-height: 1;
+        text-transform: uppercase;
+        letter-spacing: .7px;
     }
 
-    .ma-kpi-note {
-        display: block;
-        margin-top: 8px;
-        color: #7288ae;
-        font-size: .75rem;
-    }
+    /* MAIN */
 
-    .ma-layout {
+    .content-grid {
         display: grid;
-        grid-template-columns: minmax(0,1.55fr) minmax(300px,1fr);
+        grid-template-columns: minmax(0, 1.5fr) minmax(330px, .8fr);
         gap: 18px;
-        margin-top: 22px;
-        align-items: start;
+        margin-top: 18px;
     }
 
-    .ma-panel {
-        overflow: hidden;
-        margin-bottom: 18px;
-        border: 1px solid var(--ma-line);
-        border-radius: 17px;
-        background: var(--ma-panel);
+    .panel {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        padding: 22px;
+        box-shadow: 0 8px 28px rgba(16,32,25,.05);
     }
 
-    .ma-section-head {
-        flex-wrap: wrap;
-        padding: 19px 20px;
-        border-bottom: 1px solid var(--ma-line);
-    }
-
-        .ma-section-head h2 {
-            margin: 0;
-            color: white;
-            font-family: "Barlow Condensed", sans-serif;
-            font-size: 1.45rem;
-            font-weight: 700;
+        .panel + .panel {
+            margin-top: 18px;
         }
 
-        .ma-section-head p {
-            margin: 4px 0 0;
-            color: var(--ma-muted);
-            font-size: .82rem;
-        }
-
-    .ma-chart-wrap {
-        position: relative;
-        height: 260px;
-        padding: 18px;
-    }
-
-        .ma-chart-wrap.short {
-            height: 220px;
-        }
-
-    .ma-filter-row {
-        justify-content: flex-start;
-        flex-wrap: wrap;
-        padding: 14px 20px 0;
-    }
-
-    .ma-filter {
-        padding: 8px 11px;
-        border: 1px solid var(--ma-line);
-        border-radius: 9px;
-        background: #0a172b;
-        color: #a8bddf;
-        font: inherit;
-        font-size: .78rem;
-        font-weight: 600;
-        cursor: pointer;
-        transition: .2s;
-    }
-
-        .ma-filter:hover, .ma-filter.active {
-            border-color: var(--ma-blue);
-            background: rgba(77,141,255,.14);
-            color: white;
-        }
-
-    .ma-events {
-        margin: 0;
-        padding: 8px 20px 15px;
-        list-style: none;
-    }
-
-    .ma-event {
-        display: grid;
-        grid-template-columns: 50px minmax(0,1fr);
-        gap: 12px;
-        padding: 16px 0;
-        border-bottom: 1px solid rgba(35,55,87,.7);
-    }
-
-        .ma-event:last-child {
-            border-bottom: 0;
-        }
-
-        .ma-event[hidden] {
-            display: none;
-        }
-
-    .ma-minute {
-        align-self: start;
-        padding: 7px 4px;
-        border: 1px solid var(--ma-line);
-        border-radius: 8px;
-        background: #0a172b;
-        color: #c4d7f6;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: 1rem;
-        font-weight: 700;
-        text-align: center;
-    }
-
-    .ma-event-main {
+    .panel-head {
         display: flex;
-        align-items: flex-start;
-        gap: 11px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        margin-bottom: 20px;
     }
 
-    .ma-event-icon {
-        display: grid;
-        place-items: center;
-        flex: 0 0 35px;
-        width: 35px;
-        height: 35px;
+    .panel-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 17px;
+        font-weight: 950;
+        color: var(--text);
+    }
+
+    .panel-title-icon {
+        width: 34px;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         border-radius: 10px;
-        background: #182a49;
-        font-size: 1rem;
+        background: var(--green-soft);
     }
 
-        .ma-event-icon.goal {
-            color: var(--ma-green);
-        }
-
-        .ma-event-icon.card {
-            color: var(--ma-yellow);
-        }
-
-        .ma-event-icon.sub {
-            color: var(--ma-cyan);
-        }
-
-    .ma-event-player {
-        margin: 0;
-        color: #edf3ff;
-        font-size: .92rem;
-        font-weight: 700;
-        overflow-wrap: anywhere;
+    .panel-badge {
+        font-size: 10px;
+        font-weight: 900;
+        color: var(--green-dark);
+        background: var(--green-soft);
+        padding: 7px 10px;
+        border-radius: 999px;
     }
 
-    .ma-event-detail {
+    /* EVENTS */
+
+    .events-list {
+        position: relative;
+    }
+
+        .events-list::before {
+            content: "";
+            position: absolute;
+            left: 42px;
+            top: 5px;
+            bottom: 5px;
+            width: 2px;
+            background: linear-gradient(var(--green), #dcefe6);
+        }
+
+    .event {
+        display: grid;
+        grid-template-columns: 65px 42px 1fr;
+        align-items: center;
+        gap: 12px;
+        min-height: 65px;
+        position: relative;
+    }
+
+    .event-minute {
+        text-align: right;
+        font-weight: 950;
+        font-size: 12px;
+        color: var(--green-dark);
+    }
+
+    .event-icon {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: white;
+        border: 2px solid var(--border);
+        position: relative;
+        z-index: 2;
+        font-size: 15px;
+    }
+
+    .event.goal .event-icon {
+        border-color: #00b86b;
+        background: #eafff5;
+    }
+
+    .event.yellowcard .event-icon {
+        border-color: #f4b400;
+        background: #fff9df;
+    }
+
+    .event.redcard .event-icon {
+        border-color: #ef4444;
+        background: #fff0f0;
+    }
+
+    .event.substitution .event-icon {
+        border-color: #5b8def;
+        background: #eff4ff;
+    }
+
+    .event-content {
+        background: #f8faf9;
+        border: 1px solid #edf2ef;
+        border-radius: 14px;
+        padding: 11px 14px;
+    }
+
+    .event-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .event-player {
+        font-weight: 900;
+        font-size: 13px;
+        color: var(--text);
+    }
+
+    .event-team {
+        font-size: 10px;
+        font-weight: 800;
+        color: var(--muted);
+    }
+
+    .event-desc {
         margin-top: 4px;
-        color: var(--ma-muted);
-        font-size: .81rem;
+        font-size: 11px;
+        color: var(--muted);
     }
 
-    .ma-event-team {
-        display: inline-block;
-        margin-top: 7px;
-        padding: 3px 8px;
-        border-radius: 5px;
-        background: rgba(77,141,255,.1);
-        color: #91baff;
-        font-size: .7rem;
+    .empty-events {
+        text-align: center;
+        padding: 40px 15px;
+        color: var(--muted);
+        background: #f8faf9;
+        border-radius: 15px;
     }
 
-    .ma-empty {
-        padding: 30px 20px;
-        color: var(--ma-muted);
+    /* ANALYSIS */
+
+    .comparison {
+        display: grid;
+        grid-template-columns: 1fr 70px 1fr;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .comparison-team {
+        font-weight: 900;
+        font-size: 13px;
+    }
+
+        .comparison-team.right {
+            text-align: right;
+        }
+
+    .comparison-value {
+        font-size: 22px;
+        font-weight: 950;
+        color: var(--green-dark);
         text-align: center;
     }
 
-    .ma-comparison {
-        padding: 20px;
+    .bar-wrap {
+        grid-column: 1 / -1;
+        height: 9px;
+        border-radius: 99px;
+        background: #edf2ef;
+        overflow: hidden;
+        display: flex;
     }
 
-    .ma-compare-row {
-        margin-bottom: 23px;
+    .bar-home {
+        background: linear-gradient(90deg, #08794f, #00c875);
+        height: 100%;
     }
 
-        .ma-compare-row:last-child {
+    .bar-away {
+        background: linear-gradient(90deg, #74d9ad, #b9efda);
+        height: 100%;
+    }
+
+    .stat-row {
+        margin-bottom: 22px;
+    }
+
+        .stat-row:last-child {
             margin-bottom: 0;
         }
 
-    .ma-compare-numbers {
-        display: grid;
-        grid-template-columns: 38px minmax(0,1fr) 38px;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 9px;
-    }
-
-    .ma-number {
-        color: white;
-        font-family: "Barlow Condensed", sans-serif;
-        font-size: 1.35rem;
-        font-weight: 700;
-        text-align: center;
-    }
-
-    .ma-compare-label {
-        color: #a5b8d9;
-        font-size: .83rem;
-        text-align: center;
-    }
-
-    .ma-bars {
-        display: flex;
-        gap: 4px;
-        height: 7px;
-    }
-
-    .ma-bar {
-        min-width: 0;
-        height: 100%;
-        border-radius: 99px;
-    }
-
-        .ma-bar.home {
-            background: linear-gradient(90deg, var(--ma-blue), var(--ma-cyan));
-        }
-
-        .ma-bar.away {
-            background: linear-gradient(90deg, var(--ma-purple), #d6baff);
-        }
-
-    .ma-insight {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        margin: 0 20px 20px;
-        padding: 14px;
-        border: 1px solid rgba(77,141,255,.22);
-        border-radius: 12px;
-        background: rgba(77,141,255,.07);
-    }
-
-    .ma-insight-icon {
-        color: var(--ma-cyan);
-        font-size: 1.2rem;
-    }
-
-    .ma-insight strong {
-        display: block;
-        color: #eaf2ff;
-        font-size: .85rem;
-    }
-
-    .ma-insight p {
-        margin: 5px 0 0;
-        color: #9db2d4;
-        font-size: .8rem;
-        line-height: 1.55;
-    }
-
-    .ma-info {
-        margin: 0;
-        padding: 7px 20px 15px;
-    }
-
-    .ma-info-row {
+    .stat-label {
         display: flex;
         justify-content: space-between;
-        gap: 14px;
-        padding: 13px 0;
-        border-bottom: 1px solid rgba(35,55,87,.7);
+        font-size: 11px;
+        font-weight: 800;
+        color: var(--muted);
+        margin-bottom: 8px;
     }
 
-        .ma-info-row:last-child {
+    /* TEAM CARDS */
+
+    .team-card {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 17px;
+        background: linear-gradient(145deg, #fff, #f8fbf9);
+    }
+
+        .team-card + .team-card {
+            margin-top: 12px;
+        }
+
+    .team-card-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .small-logo {
+        width: 52px;
+        height: 52px;
+        object-fit: contain;
+        border-radius: 14px;
+        padding: 7px;
+        background: white;
+        border: 1px solid var(--border);
+    }
+
+    .team-card-name {
+        font-weight: 950;
+        font-size: 16px;
+    }
+
+    .team-card-sub {
+        color: var(--muted);
+        font-size: 11px;
+        margin-top: 2px;
+    }
+
+    .team-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 15px;
+    }
+
+    .team-stat {
+        text-align: center;
+        background: white;
+        border: 1px solid var(--border);
+        padding: 10px 5px;
+        border-radius: 12px;
+    }
+
+    .team-stat-value {
+        font-size: 17px;
+        font-weight: 950;
+        color: var(--green-dark);
+    }
+
+    .team-stat-label {
+        font-size: 9px;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-weight: 800;
+        margin-top: 2px;
+    }
+
+    /* PLAYER LIST */
+
+    .player-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 0;
+        border-bottom: 1px solid #eef2ef;
+    }
+
+        .player-row:last-child {
             border-bottom: 0;
         }
 
-    .ma-info dt {
-        color: var(--ma-muted);
-        font-size: .83rem;
-    }
-
-    .ma-info dd {
-        margin: 0;
-        color: #e6efff;
-        font-size: .83rem;
-        font-weight: 600;
-        text-align: right;
-        overflow-wrap: anywhere;
-    }
-
-    .ma-legend {
+    .player-number {
+        width: 30px;
+        height: 30px;
         display: flex;
-        gap: 14px;
-        flex-wrap: wrap;
-        padding: 0 20px 17px;
-        color: var(--ma-muted);
-        font-size: .76rem;
+        align-items: center;
+        justify-content: center;
+        background: var(--green-soft);
+        color: var(--green-dark);
+        border-radius: 9px;
+        font-size: 10px;
+        font-weight: 950;
     }
 
-        .ma-legend span {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-    .ma-dot {
-        display: inline-block;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
+    .player-name {
+        font-size: 12px;
+        font-weight: 850;
+        flex: 1;
     }
 
-        .ma-dot.home {
-            background: var(--ma-blue);
-        }
-
-        .ma-dot.away {
-            background: var(--ma-purple);
-        }
-
-    .ma-footer {
-        flex-wrap: wrap;
-        margin-top: 25px;
-        padding-top: 18px;
-        border-top: 1px solid var(--ma-line);
-        color: #7085a8;
-        font-size: .8rem;
+    .player-team {
+        font-size: 9px;
+        color: var(--muted);
     }
 
-        .ma-footer strong {
-            color: #a5badc;
-            font-family: "Barlow Condensed", sans-serif;
-            letter-spacing: .1em;
-        }
+    .player-event {
+        font-size: 12px;
+    }
 
-    @@media (max-width: 900px) {
-        .ma-layout {
+    /* HIGHLIGHTS */
+
+    .highlight-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .highlight {
+        padding: 14px;
+        background: #f7faf8;
+        border: 1px solid #e8efeb;
+        border-radius: 15px;
+    }
+
+    .highlight-icon {
+        font-size: 18px;
+    }
+
+    .highlight-value {
+        font-size: 17px;
+        font-weight: 950;
+        margin-top: 7px;
+        color: var(--green-dark);
+    }
+
+    .highlight-label {
+        font-size: 9px;
+        color: var(--muted);
+        text-transform: uppercase;
+        font-weight: 800;
+        margin-top: 2px;
+    }
+
+    /* RESULT */
+
+    .result-card {
+        text-align: center;
+        border-radius: 18px;
+        padding: 20px;
+        background: linear-gradient(135deg, #03271b, #08794f);
+        color: white;
+    }
+
+    .result-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 1.3px;
+        opacity: .65;
+        font-weight: 900;
+    }
+
+    .result-title {
+        font-size: 21px;
+        font-weight: 950;
+        margin-top: 6px;
+    }
+
+    .result-score {
+        font-size: 37px;
+        font-weight: 950;
+        margin-top: 8px;
+        letter-spacing: -2px;
+    }
+
+    /* FOOTER */
+
+    .match-footer {
+        margin-top: 18px;
+        padding: 17px 20px;
+        border-radius: 18px;
+        background: #07150f;
+        color: rgba(255,255,255,.65);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        font-size: 11px;
+    }
+
+    .footer-brand {
+        color: #67e8ae;
+        font-weight: 950;
+    }
+
+    /* RESPONSIVE */
+
+    @@media (max-width: 1050px) {
+        .content-grid {
             grid-template-columns: 1fr;
         }
 
-        .ma-kpis {
-            grid-template-columns: repeat(2,minmax(0,1fr));
+        .kpi-grid {
+            grid-template-columns: repeat(2, 1fr);
         }
     }
 
-    @@media (max-width: 600px) {
-        .ma-shell {
-            width: calc(100% - 22px);
+    @@media (max-width: 700px) {
+        .match-page {
+            padding: 12px 10px 45px;
         }
 
-        .ma-page {
-            padding-top: 16px;
+        .match-topbar {
+            border-radius: 18px;
         }
 
-        .ma-hero {
-            padding: 20px 14px;
-            border-radius: 17px;
+        .brand-sub {
+            display: none;
         }
 
-        .ma-hero-top {
-            align-items: flex-start;
-            flex-wrap: wrap;
+        .hero-content {
+            padding: 22px 15px 25px;
         }
 
-        .ma-matchup {
-            gap: 6px;
-            margin-top: 25px;
+        .teams-row {
+            grid-template-columns: 1fr;
+            gap: 20px;
         }
 
-        .ma-team, .ma-team.away {
+        .team-box,
+        .team-box.away {
             flex-direction: column;
-            gap: 8px;
             text-align: center;
         }
 
-        .ma-crest {
-            flex-basis: 48px;
-            width: 48px;
-            height: 48px;
-            font-size: 1.4rem;
+        .score-box {
+            order: -1;
         }
 
-        .ma-team-name {
-            font-size: 1.3rem;
+        .team-logo {
+            width: 82px;
+            height: 82px;
         }
 
-        .ma-team-label {
-            font-size: .6rem;
+        .score {
+            font-size: 55px;
         }
 
-        .ma-score {
-            font-size: 3rem;
-        }
-
-        .ma-vs {
-            font-size: 1.4rem;
-        }
-
-        .ma-meta {
-            justify-content: flex-start;
-            font-size: .76rem;
-        }
-
-        .ma-kpi {
-            padding: 14px;
-        }
-
-        .ma-kpi-value {
-            font-size: 1.8rem;
-        }
-
-        .ma-section-head {
-            padding: 15px;
-        }
-
-        .ma-chart-wrap {
-            height: 230px;
-            padding: 12px;
-        }
-
-        .ma-events {
-            padding: 8px 13px 13px;
-        }
-
-        .ma-event {
-            grid-template-columns: 43px minmax(0,1fr);
+        .kpi-grid {
+            grid-template-columns: repeat(2, 1fr);
             gap: 9px;
         }
 
-        .ma-filter-row {
-            padding-left: 13px;
-            padding-right: 13px;
+        .kpi {
+            padding: 13px;
         }
 
-        .ma-filter {
-            flex: 1;
+        .kpi-value {
+            font-size: 22px;
         }
 
-        .ma-comparison {
-            padding: 16px;
+        .panel {
+            padding: 15px;
+            border-radius: 17px;
+        }
+
+        .comparison {
+            grid-template-columns: 1fr 50px 1fr;
+        }
+
+        .highlight-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .match-footer {
+            flex-direction: column;
+            text-align: center;
         }
     }
 </style>
 
-<main class="ma-page">
-    <div class="ma-shell">
-        <a class="ma-back" asp-controller="Fixtures" asp-action="Index" asp-route-week="@Model.Week">← Fikstüre dön</a>
+<div class="match-page">
 
-        <section class="ma-hero">
-            <div class="ma-hero-top">
-                <div class="ma-league">
-                    <span class="ma-mark">A</span>
-                    <span>Serie A · Match Intelligence</span>
-                </div>
-                <span class="ma-status @(finished ? "done" : "")">
-                    @(finished ? "MAÇ TAMAMLANDI" : (string.IsNullOrWhiteSpace(status) ? "MAÇ DETAYI" : status.ToUpperInvariant()))
-                </span>
-            </div>
+    <!-- TOP NAV -->
+    <div class="match-topbar">
+        <div class="brand-area">
+            <div class="brand-ball">⚽</div>
 
-            <div class="ma-matchup">
-                <div class="ma-team">
-                    <span class="ma-crest">@homeInitial</span>
-                    <div>
-                        <span class="ma-team-label">EV SAHİBİ</span>
-                        <h1 class="ma-team-name">@home</h1>
-                    </div>
-                </div>
-
-                <div class="ma-scoreboard">
-                    @if (hasScore)
-                    {
-                        <div class="ma-score">@Model.HomeScore<span>:</span>@Model.AwayScore</div>
-                    }
-                    else
-                    {
-                        <div class="ma-vs">VS</div>
-                    }
-                    <div class="ma-time">@(string.IsNullOrWhiteSpace(Model.Time) ? "Saat belirtilmedi" : Model.Time)</div>
-                </div>
-
-                <div class="ma-team away">
-                    <span class="ma-crest">@awayInitial</span>
-                    <div>
-                        <span class="ma-team-label">DEPLASMAN</span>
-                        <h2 class="ma-team-name">@away</h2>
-                    </div>
-                </div>
-            </div>
-
-            <div class="ma-meta">
-                <span>▦ @Model.MatchDate.ToString("dd MMMM yyyy", new CultureInfo("tr-TR"))</span>
-                <span>◷ @Model.Time</span>
-                <span>⌖ @(string.IsNullOrWhiteSpace(Model.Stadium) ? "Stadyum belirtilmedi" : Model.Stadium)</span>
-                <span>◈ @Model.Week. Hafta</span>
-            </div>
-        </section>
-
-        <section class="ma-kpis">
-            <article class="ma-kpi" style="--kpi-glow:rgba(54,214,160,.16)">
-                <span class="ma-kpi-label">Toplam gol</span>
-                <strong class="ma-kpi-value">@totalGoals</strong>
-                <span class="ma-kpi-note">@(hasScore ? "Resmî skor" : "Olay kayıtları")</span>
-            </article>
-            <article class="ma-kpi" style="--kpi-glow:rgba(77,141,255,.18)">
-                <span class="ma-kpi-label">Gol olayı</span>
-                <strong class="ma-kpi-value">@goals.Count</strong>
-                <span class="ma-kpi-note">Zaman çizelgesindeki goller</span>
-            </article>
-            <article class="ma-kpi" style="--kpi-glow:rgba(244,196,81,.18)">
-                <span class="ma-kpi-label">Kart</span>
-                <strong class="ma-kpi-value">@totalCards</strong>
-                <span class="ma-kpi-note">@totalYellows sarı · @totalReds kırmızı</span>
-            </article>
-            <article class="ma-kpi" style="--kpi-glow:rgba(66,214,232,.16)">
-                <span class="ma-kpi-label">Oyuncu değişikliği</span>
-                <strong class="ma-kpi-value">@totalSubs</strong>
-                <span class="ma-kpi-note">Kayıtlı değişiklikler</span>
-            </article>
-        </section>
-
-        <div class="ma-layout">
             <div>
-                <section class="ma-panel">
-                    <div class="ma-section-head">
-                        <div>
-                            <h2>Gol zamanları</h2>
-                            <p>Gol olaylarının maç içindeki dağılımı</p>
-                        </div>
-                    </div>
-                    @if (goals.Any())
-                    {
-                        <div class="ma-chart-wrap">
-                            <canvas id="goalTimelineChart" aria-label="Gol dakikaları grafiği"></canvas>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="ma-empty">Bu maç için gol olayı kaydı bulunmuyor.</div>
-                    }
-                </section>
+                <div class="brand-title">SERIE A MATCH CENTER</div>
+                <div class="brand-sub">Live Football Statistics</div>
+            </div>
+        </div>
 
-                <section class="ma-panel">
-                    <div class="ma-section-head">
-                        <div>
-                            <h2>Maç olayları</h2>
-                            <p>Gol, kart ve oyuncu değişikliği zaman çizelgesi</p>
-                        </div>
-                    </div>
+        <div class="live-clock">
+            <span class="live-dot"></span>
+            <span id="matchClock">MAÇ MERKEZİ</span>
+        </div>
+    </div>
 
-                    <div class="ma-filter-row" role="group" aria-label="Olay filtresi">
-                        <button class="ma-filter active" type="button" data-filter="all">Tümü</button>
-                        <button class="ma-filter" type="button" data-filter="goal">⚽ Goller</button>
-                        <button class="ma-filter" type="button" data-filter="card">▰ Kartlar</button>
-                        <button class="ma-filter" type="button" data-filter="sub">⇄ Değişiklikler</button>
-                    </div>
+    <!-- HERO -->
+    <section class="match-hero">
 
-                    @if (events.Any())
-                    {
-                        <ol class="ma-events">
-                            @foreach (var ev in events)
-                            {
-                                var icon = ev.Type == "goal" ? "⚽" : ev.Type == "card" ? "▰" : "⇄";
-                                var iconClass = ev.Type;
-                                var cardIsRed = ev.Type == "card" && ev.Detail.Contains("Kırmızı", StringComparison.OrdinalIgnoreCase);
+        <div class="hero-content">
 
-                                <li class="ma-event" data-event-type="@ev.Type">
-                                    <span class="ma-minute">@ev.Minute'</span>
-                                    <div class="ma-event-main">
-                                        <span class="ma-event-icon @iconClass" style="@(cardIsRed ? "color:var(--ma-red)" : "")">@icon</span>
-                                        <div>
-                                            <p class="ma-event-player">@ev.Player</p>
-                                            <div class="ma-event-detail">@ev.Detail</div>
-                                            <span class="ma-event-team">@ev.Team</span>
-                                        </div>
-                                    </div>
-                                </li>
-                            }
-                        </ol>
-                    }
-                    else
-                    {
-                        <div class="ma-empty">Bu maç için henüz olay kaydı bulunmuyor.</div>
-                    }
-                </section>
+            <div class="match-meta">
+
+                <span class="meta-pill">
+                    🏆 SERIE A
+                </span>
+
+                <span class="meta-pill">
+                    HAFTA @Model.Week
+                </span>
+
+                <span class="meta-pill">
+                    📅 @dateText
+                </span>
+
+                <span class="meta-pill status-pill">
+                    @Model.Status
+                </span>
+
             </div>
 
-            <aside>
-                <section class="ma-panel">
-                    <div class="ma-section-head">
-                        <div>
-                            <h2>Takım karşılaştırması</h2>
-                            <p>Mevcut olay kayıtlarına göre</p>
+            <div class="teams-row">
+
+                <!-- HOME -->
+                <div class="team-box">
+
+                    <img class="team-logo"
+                         src="@Model.HomeTeamLogoUrl"
+                         alt="@Model.HomeTeam"
+                         onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=@Uri.EscapeDataString(homeInitial)&background=075c3d&color=fff&bold=true&size=256';" />
+
+                    <div>
+                        <div class="team-name">
+                            @Model.HomeTeam
+                        </div>
+
+                        <div class="team-code">
+                            EV SAHİBİ
                         </div>
                     </div>
 
-                    <div class="ma-comparison">
-                        @{
-                            var goalSum = Math.Max(1, homeGoals + awayGoals);
-                            var yellowSum = Math.Max(1, homeYellow + awayYellow);
-                            var redSum = Math.Max(1, homeRed + awayRed);
-                            var subHome = substitutions.Count(x => string.Equals(x.Team, home, StringComparison.OrdinalIgnoreCase));
-                            var subAway = substitutions.Count(x => string.Equals(x.Team, away, StringComparison.OrdinalIgnoreCase));
-                            var subSum = Math.Max(1, subHome + subAway);
-                        }
+                </div>
 
-                        <div class="ma-compare-row">
-                            <div class="ma-compare-numbers">
-                                <span class="ma-number">@homeGoals</span>
-                                <span class="ma-compare-label">Gol kayıtları</span>
-                                <span class="ma-number">@awayGoals</span>
-                            </div>
-                            <div class="ma-bars">
-                                <span class="ma-bar home" style="width:@(homeGoals * 100.0 / goalSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                                <span class="ma-bar away" style="width:@(awayGoals * 100.0 / goalSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                            </div>
+                <!-- SCORE -->
+                <div class="score-box">
+
+                    <div class="score">
+                        @homeScore
+                        <span class="score-separator">-</span>
+                        @awayScore
+                    </div>
+
+                    <div class="result-text">
+                        @resultText
+                    </div>
+
+                </div>
+
+                <!-- AWAY -->
+                <div class="team-box away">
+
+                    <img class="team-logo"
+                         src="@Model.AwayTeamLogoUrl"
+                         alt="@Model.AwayTeam"
+                         onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=@Uri.EscapeDataString(awayInitial)&background=075c3d&color=fff&bold=true&size=256';" />
+
+                    <div>
+                        <div class="team-name">
+                            @Model.AwayTeam
                         </div>
 
-                        <div class="ma-compare-row">
-                            <div class="ma-compare-numbers">
-                                <span class="ma-number">@homeYellow</span>
-                                <span class="ma-compare-label">Sarı kart</span>
-                                <span class="ma-number">@awayYellow</span>
-                            </div>
-                            <div class="ma-bars">
-                                <span class="ma-bar home" style="width:@(homeYellow * 100.0 / yellowSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                                <span class="ma-bar away" style="width:@(awayYellow * 100.0 / yellowSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                            </div>
-                        </div>
-
-                        <div class="ma-compare-row">
-                            <div class="ma-compare-numbers">
-                                <span class="ma-number">@homeRed</span>
-                                <span class="ma-compare-label">Kırmızı kart</span>
-                                <span class="ma-number">@awayRed</span>
-                            </div>
-                            <div class="ma-bars">
-                                <span class="ma-bar home" style="width:@(homeRed * 100.0 / redSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                                <span class="ma-bar away" style="width:@(awayRed * 100.0 / redSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                            </div>
-                        </div>
-
-                        <div class="ma-compare-row">
-                            <div class="ma-compare-numbers">
-                                <span class="ma-number">@subHome</span>
-                                <span class="ma-compare-label">Değişiklik</span>
-                                <span class="ma-number">@subAway</span>
-                            </div>
-                            <div class="ma-bars">
-                                <span class="ma-bar home" style="width:@(subHome * 100.0 / subSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                                <span class="ma-bar away" style="width:@(subAway * 100.0 / subSum).ToString(" 0.##", CultureInfo.InvariantCulture)%"></span>
-                            </div>
+                        <div class="team-code">
+                            DEPLASMAN
                         </div>
                     </div>
 
-                    <div class="ma-legend">
-                        <span><i class="ma-dot home"></i>@home</span>
-                        <span><i class="ma-dot away"></i>@away</span>
+                </div>
+
+            </div>
+
+            <div class="match-info">
+
+                <div class="info-item">
+                    🏟️ @Model.Stadium
+                </div>
+
+                <div class="info-item">
+                    🕐 @Model.Time
+                </div>
+
+                <div class="info-item">
+                    📅 @dateText
+                </div>
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- KPI -->
+    <section class="kpi-grid">
+
+        <div class="kpi">
+            <div class="kpi-icon">⚽</div>
+            <div class="kpi-value">@totalGoals</div>
+            <div class="kpi-label">Toplam Gol</div>
+        </div>
+
+        <div class="kpi">
+            <div class="kpi-icon">🟨</div>
+            <div class="kpi-value">@totalCards</div>
+            <div class="kpi-label">Toplam Kart</div>
+        </div>
+
+        <div class="kpi">
+            <div class="kpi-icon">🔄</div>
+            <div class="kpi-value">@totalSubs</div>
+            <div class="kpi-label">Değişiklik</div>
+        </div>
+
+        <div class="kpi">
+            <div class="kpi-icon">👤</div>
+            <div class="kpi-value">@uniquePlayers.Count</div>
+            <div class="kpi-label">Olaylardaki Oyuncu</div>
+        </div>
+
+    </section>
+
+
+    <!-- MAIN -->
+    <div class="content-grid">
+
+        <!-- LEFT -->
+        <main>
+
+            <!-- MAÇ OLAYLARI -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">⚡</span>
+                        Maç Olayları
                     </div>
 
-                    <div class="ma-insight">
-                        <span class="ma-insight-icon">✦</span>
-                        <div>
-                            <strong>Maç analizi</strong>
-                            <p>
-                                @if (hasScore)
-                                {
-                                    if (Model.HomeScore > Model.AwayScore)
+                    <span class="panel-badge">
+                        @totalEvents OLAY
+                    </span>
+
+                </div>
+
+                @if (allEvents.Any())
+                {
+                    <div class="events-list">
+
+                        @foreach (var item in allEvents)
+                        {
+                            <div class="event @item.Type">
+
+                                <div class="event-minute">
+                                    @item.Minute'
+                                </div>
+
+                                <div class="event-icon">
+
+                                    @if (item.Type == "goal")
                                     {
-                                        <span>@home, karşılaşmayı @Model.HomeScore–@Model.AwayScore skoruyla kazandı.</span>
+                                        <span>⚽</span>
                                     }
-                                    else if (Model.HomeScore < Model.AwayScore)
+                                    else if (item.Type == "yellowcard")
                                     {
-                                        <span>@away, karşılaşmayı @Model.AwayScore–@Model.HomeScore skoruyla kazandı.</span>
+                                        <span>🟨</span>
+                                    }
+                                    else if (item.Type == "redcard")
+                                    {
+                                        <span>🟥</span>
                                     }
                                     else
                                     {
-                                        <span>Karşılaşma @Model.HomeScore–@Model.AwayScore beraberlikle sonuçlandı.</span>
+                                        <span>🔄</span>
                                     }
-                                }
-                                else
-                                {
-                                    <span>Skor henüz belli değil. Olay kayıtları geldikçe analizler güncellenir.</span>
-                                }
-                            </p>
-                        </div>
-                    </div>
-                </section>
 
-                <section class="ma-panel">
-                    <div class="ma-section-head">
-                        <div>
-                            <h2>Karşılaşma bilgileri</h2>
-                            <p>Maçın temel bilgileri</p>
-                        </div>
-                    </div>
-                    <dl class="ma-info">
-                        <div class="ma-info-row"><dt>Organizasyon</dt><dd>Serie A</dd></div>
-                        <div class="ma-info-row"><dt>Hafta</dt><dd>@Model.Week</dd></div>
-                        <div class="ma-info-row"><dt>Durum</dt><dd>@Model.Status</dd></div>
-                        <div class="ma-info-row"><dt>Tarih</dt><dd>@Model.MatchDate.ToString("dd.MM.yyyy")</dd></div>
-                        <div class="ma-info-row"><dt>Saat</dt><dd>@Model.Time</dd></div>
-                        <div class="ma-info-row"><dt>Stadyum</dt><dd>@(string.IsNullOrWhiteSpace(Model.Stadium) ? "Belirtilmedi" : Model.Stadium)</dd></div>
-                    </dl>
-                </section>
+                                </div>
 
-                <section class="ma-panel">
-                    <div class="ma-section-head">
-                        <div>
-                            <h2>Kart dağılımı</h2>
-                            <p>Takımlara göre kart sayısı</p>
+                                <div class="event-content">
+
+                                    <div class="event-top">
+
+                                        @if (item.Type == "goal")
+                                        {
+                                            <div class="event-player">
+                                                @item.Player
+                                            </div>
+
+                                            <div class="event-team">
+                                                @item.Team
+                                            </div>
+                                        }
+                                        else if (item.Type == "yellowcard")
+                                        {
+                                            <div class="event-player">
+                                                @item.Player
+                                            </div>
+
+                                            <div class="event-team">
+                                                @item.Team
+                                            </div>
+                                        }
+                                        else if (item.Type == "redcard")
+                                        {
+                                            <div class="event-player">
+                                                @item.Player
+                                            </div>
+
+                                            <div class="event-team">
+                                                @item.Team
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="event-player">
+                                                @item.PlayerOut
+                                                <span style="opacity:.45;">→</span>
+                                                @item.PlayerIn
+                                            </div>
+
+                                            <div class="event-team">
+                                                @item.Team
+                                            </div>
+                                        }
+
+                                    </div>
+
+                                    <div class="event-desc">
+
+                                        @if (item.Type == "goal")
+                                        {
+                                            <span>Gol</span>
+                                        }
+                                        else if (item.Type == "yellowcard")
+                                        {
+                                            <span>@item.CardType</span>
+                                        }
+                                        else if (item.Type == "redcard")
+                                        {
+                                            <span>@item.CardType</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Oyuncu değişikliği</span>
+                                        }
+
+                                    </div>
+
+                                </div>
+
+                            </div>
+                        }
+
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-events">
+                        <div style="font-size:35px;">⚽</div>
+                        <strong>Henüz maç olayı bulunmuyor</strong>
+                        <div style="margin-top:5px;font-size:11px;">
+                            Bu maç için gol, kart veya oyuncu değişikliği kaydı yok.
                         </div>
                     </div>
-                    @if (cards.Any())
+                }
+
+            </section>
+
+
+            <!-- MAÇ ANALİZİ -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">📊</span>
+                        Maç Analizi
+                    </div>
+
+                    <span class="panel-badge">
+                        VERİ TABANI ANALİZİ
+                    </span>
+
+                </div>
+
+
+                <!-- GOL -->
+                <div class="stat-row">
+
+                    <div class="stat-label">
+                        <span>@Model.HomeTeam</span>
+                        <strong>Gol</strong>
+                        <span>@Model.AwayTeam</span>
+                    </div>
+
+                    <div class="comparison">
+
+                        <div class="comparison-team">
+                            @homeGoals
+                        </div>
+
+                        <div class="comparison-value">
+                            ⚽
+                        </div>
+
+                        <div class="comparison-team right">
+                            @awayGoals
+                        </div>
+
+                        <div class="bar-wrap">
+                            <div class="bar-home" style="width:@homeGoalPercentage%"></div>
+                            <div class="bar-away" style="width:@awayGoalPercentage%"></div>
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- KART -->
+                <div class="stat-row">
+
+                    <div class="stat-label">
+                        <span>@Model.HomeTeam</span>
+                        <strong>Kart</strong>
+                        <span>@Model.AwayTeam</span>
+                    </div>
+
+                    <div class="comparison">
+
+                        <div class="comparison-team">
+                            @(homeYellowCards + homeRedCards)
+                        </div>
+
+                        <div class="comparison-value">
+                            🟨
+                        </div>
+
+                        <div class="comparison-team right">
+                            @(awayYellowCards + awayRedCards)
+                        </div>
+
+                        <div class="bar-wrap">
+
+                            @{
+                                var totalTeamCards =
+                                homeYellowCards + homeRedCards +
+                                awayYellowCards + awayRedCards;
+
+                                var homeCardPercent =
+                                totalTeamCards > 0
+                                ? (double)(homeYellowCards + homeRedCards) / totalTeamCards * 100
+                                : 50;
+
+                                var awayCardPercent =
+                                totalTeamCards > 0
+                                ? 100 - homeCardPercent
+                                : 50;
+                            }
+
+                            <div class="bar-home" style="width:@homeCardPercent%"></div>
+                            <div class="bar-away" style="width:@awayCardPercent%"></div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- DEĞİŞİKLİK -->
+                <div class="stat-row">
+
+                    <div class="stat-label">
+                        <span>@Model.HomeTeam</span>
+                        <strong>Değişiklik</strong>
+                        <span>@Model.AwayTeam</span>
+                    </div>
+
+                    <div class="comparison">
+
+                        <div class="comparison-team">
+                            @homeSubs
+                        </div>
+
+                        <div class="comparison-value">
+                            🔄
+                        </div>
+
+                        <div class="comparison-team right">
+                            @awaySubs
+                        </div>
+
+                        <div class="bar-wrap">
+
+                            @{
+                                var totalSubTeam = homeSubs + awaySubs;
+
+                                var homeSubPercent =
+                                totalSubTeam > 0
+                                ? (double)homeSubs / totalSubTeam * 100
+                                : 50;
+
+                                var awaySubPercent =
+                                totalSubTeam > 0
+                                ? 100 - homeSubPercent
+                                : 50;
+                            }
+
+                            <div class="bar-home" style="width:@homeSubPercent%"></div>
+                            <div class="bar-away" style="width:@awaySubPercent%"></div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- GOL ZAMANLARI -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">⏱️</span>
+                        Gol Zamanları
+                    </div>
+
+                    <span class="panel-badge">
+                        @totalGoals GOL
+                    </span>
+
+                </div>
+
+                @if (goals.Any())
+                {
+                    <div style="position:relative;height:85px;margin-top:10px;">
+
+                        <div style="
+                                    position:absolute;
+                                    left:0;
+                                    right:0;
+                                    top:40px;
+                                    height:5px;
+                                    border-radius:10px;
+                                    background:linear-gradient(90deg,#075c3d,#00c875,#075c3d);">
+                        </div>
+
+                        @foreach (var goal in goals.OrderBy(x => x.Minute))
+                        {
+                            var position = Math.Min(96, Math.Max(2, goal.Minute / 90.0 * 100));
+
+                            <div style="
+                                                position:absolute;
+                                                left:@position%;
+                                                top:20px;
+                                                transform:translateX(-50%);
+                                                text-align:center;">
+
+                                <div style="
+                                                    width:38px;
+                                                    height:38px;
+                                                    border-radius:50%;
+                                                    background:#e9fff5;
+                                                    border:2px solid #00b86b;
+                                                    display:flex;
+                                                    align-items:center;
+                                                    justify-content:center;
+                                                    font-size:15px;
+                                                    box-shadow:0 5px 15px rgba(0,184,107,.15);">
+                                    ⚽
+                                </div>
+
+                                <div style="
+                                                    margin-top:6px;
+                                                    font-size:10px;
+                                                    font-weight:900;
+                                                    white-space:nowrap;">
+                                    @goal.Minute'
+                                </div>
+
+                            </div>
+                        }
+
+                    </div>
+
+                    <div style="
+                                display:flex;
+                                justify-content:space-between;
+                                color:#8a9690;
+                                font-size:9px;
+                                font-weight:800;
+                                margin-top:5px;">
+                        <span>0'</span>
+                        <span>15'</span>
+                        <span>30'</span>
+                        <span>45'</span>
+                        <span>60'</span>
+                        <span>75'</span>
+                        <span>90'</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-events">
+                        Gol zamanlaması bulunmuyor.
+                    </div>
+                }
+
+            </section>
+
+
+            <!-- ÖNE ÇIKAN OYUNCULAR -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">👤</span>
+                        Maçta Öne Çıkan Oyuncular
+                    </div>
+
+                    <span class="panel-badge">
+                        @uniquePlayers.Count OYUNCU
+                    </span>
+
+                </div>
+
+                @if (uniquePlayers.Any())
+                {
+                    @foreach (var player in uniquePlayers)
                     {
-                        <div class="ma-chart-wrap short">
-                            <canvas id="cardsChart" aria-label="Kart dağılımı grafiği"></canvas>
+                        var playerGoals = goals.Count(x =>
+                        string.Equals(x.PlayerName, player, StringComparison.OrdinalIgnoreCase));
+
+                        var playerCards = cards.Count(x =>
+                        string.Equals(x.PlayerName, player, StringComparison.OrdinalIgnoreCase));
+
+                        var playerSubsIn = substitutions.Count(x =>
+                        string.Equals(x.PlayerIn, player, StringComparison.OrdinalIgnoreCase));
+
+                        var playerSubsOut = substitutions.Count(x =>
+                        string.Equals(x.PlayerOut, player, StringComparison.OrdinalIgnoreCase));
+
+                        var playerTeam =
+                        goals.FirstOrDefault(x =>
+                        string.Equals(x.PlayerName, player, StringComparison.OrdinalIgnoreCase))?.Team
+                        ??
+                        cards.FirstOrDefault(x =>
+                        string.Equals(x.PlayerName, player, StringComparison.OrdinalIgnoreCase))?.Team
+                        ??
+                        substitutions.FirstOrDefault(x =>
+                        string.Equals(x.PlayerIn, player, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(x.PlayerOut, player, StringComparison.OrdinalIgnoreCase))?.Team
+                        ??
+                        "";
+
+                        <div class="player-row">
+
+                            <div class="player-number">
+                                ⚽
+                            </div>
+
+                            <div style="flex:1;">
+
+                                <div class="player-name">
+                                    @player
+                                </div>
+
+                                <div class="player-team">
+                                    @playerTeam
+                                </div>
+
+                            </div>
+
+                            @if (playerGoals > 0)
+                            {
+                                <div class="player-event">
+                                    ⚽ @playerGoals
+                                </div>
+                            }
+
+                            @if (playerCards > 0)
+                            {
+                                <div class="player-event">
+                                    🟨 @playerCards
+                                </div>
+                            }
+
+                            @if (playerSubsIn > 0 || playerSubsOut > 0)
+                            {
+                                <div class="player-event">
+                                    🔄
+                                </div>
+                            }
+
                         </div>
                     }
-                    else
-                    {
-                        <div class="ma-empty">Kart kaydı bulunmuyor.</div>
-                    }
-                </section>
-            </aside>
+                }
+                else
+                {
+                    <div class="empty-events">
+                        Oyuncu olayı bulunmuyor.
+                    </div>
+                }
+
+            </section>
+
+        </main>
+
+
+        <!-- RIGHT SIDEBAR -->
+        <aside>
+
+
+            <!-- RESULT -->
+            <section class="panel">
+
+                <div class="result-card">
+
+                    <div class="result-label">
+                        Maç Sonucu
+                    </div>
+
+                    <div class="result-title">
+                        @resultText
+                    </div>
+
+                    <div class="result-score">
+                        @homeScore - @awayScore
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- TEAM ANALYSIS -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">🛡️</span>
+                        Takım Analizi
+                    </div>
+
+                </div>
+
+
+                <!-- HOME TEAM -->
+                <div class="team-card">
+
+                    <div class="team-card-head">
+
+                        <img class="small-logo"
+                             src="@Model.HomeTeamLogoUrl"
+                             alt="@Model.HomeTeam"
+                             onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=@Uri.EscapeDataString(homeInitial)&background=075c3d&color=fff&bold=true&size=256';" />
+
+                        <div>
+                            <div class="team-card-name">
+                                @Model.HomeTeam
+                            </div>
+
+                            <div class="team-card-sub">
+                                Ev Sahibi
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="team-stats">
+
+                        <div class="team-stat">
+                            <div class="team-stat-value">
+                                @homeGoals
+                            </div>
+                            <div class="team-stat-label">
+                                Gol
+                            </div>
+                        </div>
+
+                        <div class="team-stat">
+                            <div class="team-stat-value">
+                                @(homeYellowCards + homeRedCards)
+                            </div>
+                            <div class="team-stat-label">
+                                Kart
+                            </div>
+                        </div>
+
+                        <div class="team-stat">
+                            <div class="team-stat-value">
+                                @homeSubs
+                            </div>
+                            <div class="team-stat-label">
+                                Değişiklik
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- AWAY TEAM -->
+                <div class="team-card">
+
+                    <div class="team-card-head">
+
+                        <img class="small-logo"
+                             src="@Model.AwayTeamLogoUrl"
+                             alt="@Model.AwayTeam"
+                             onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=@Uri.EscapeDataString(awayInitial)&background=075c3d&color=fff&bold=true&size=256';" />
+
+                        <div>
+                            <div class="team-card-name">
+                                @Model.AwayTeam
+                            </div>
+
+                            <div class="team-card-sub">
+                                Deplasman
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="team-stats">
+
+                        <div class="team-stat">
+                            <div class="team-stat-value">
+                                @awayGoals
+                            </div>
+                            <div class="team-stat-label">
+                                Gol
+                            </div>
+                        </div>
+
+                        <div class="team-stat">
+                            <div class="team-stat-value">
+                                @(awayYellowCards + awayRedCards)
+                            </div>
+                            <div class="team-stat-label">
+                                Kart
+                            </div>
+                        </div>
+
+                        <div class="team-stat">
+                            <div class="team-stat-value">
+                                @awaySubs
+                            </div>
+                            <div class="team-stat-label">
+                                Değişiklik
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- MATCH HIGHLIGHTS -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">🔥</span>
+                        Maçın Öne Çıkanları
+                    </div>
+
+                </div>
+
+                <div class="highlight-grid">
+
+                    <div class="highlight">
+
+                        <div class="highlight-icon">
+                            ⚽
+                        </div>
+
+                        <div class="highlight-value">
+                            @(firstGoal != null ? firstGoal.Minute + "'" : "-")
+                        </div>
+
+                        <div class="highlight-label">
+                            İlk Gol
+                        </div>
+
+                    </div>
+
+
+                    <div class="highlight">
+
+                        <div class="highlight-icon">
+                            🎯
+                        </div>
+
+                        <div class="highlight-value">
+                            @(lastGoal != null ? lastGoal.Minute + "'" : "-")
+                        </div>
+
+                        <div class="highlight-label">
+                            Son Gol
+                        </div>
+
+                    </div>
+
+
+                    <div class="highlight">
+
+                        <div class="highlight-icon">
+                            🟨
+                        </div>
+
+                        <div class="highlight-value">
+                            @totalCards
+                        </div>
+
+                        <div class="highlight-label">
+                            Kart
+                        </div>
+
+                    </div>
+
+
+                    <div class="highlight">
+
+                        <div class="highlight-icon">
+                            🔄
+                        </div>
+
+                        <div class="highlight-value">
+                            @totalSubs
+                        </div>
+
+                        <div class="highlight-label">
+                            Değişiklik
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- EVENT DISTRIBUTION -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">📈</span>
+                        Olay Dağılımı
+                    </div>
+
+                </div>
+
+
+                <div class="stat-row">
+
+                    <div class="stat-label">
+                        <span>@Model.HomeTeam</span>
+                        <span>@homeEvents olay</span>
+                    </div>
+
+                    <div class="bar-wrap">
+
+                        <div class="bar-home"
+                             style="width:@homeEventPercentage%">
+                        </div>
+
+                        <div class="bar-away"
+                             style="width:@awayEventPercentage%">
+                        </div>
+
+                    </div>
+
+                    <div class="stat-label" style="margin-top:5px;">
+                        <span>@homeEventPercentage%</span>
+                        <span>@awayEventPercentage%</span>
+                    </div>
+
+                </div>
+
+
+                <div style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    margin-top:18px;
+                    font-size:10px;
+                    font-weight:800;
+                    color:#718079;">
+
+                    <span>
+                        🟢 @Model.HomeTeam
+                    </span>
+
+                    <span>
+                        @Model.AwayTeam 🟢
+                    </span>
+
+                </div>
+
+            </section>
+
+
+            <!-- MATCH INFO -->
+            <section class="panel">
+
+                <div class="panel-head">
+
+                    <div class="panel-title">
+                        <span class="panel-title-icon">ℹ️</span>
+                        Maç Bilgileri
+                    </div>
+
+                </div>
+
+                <div style="display:grid;gap:10px;">
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        padding:11px 12px;
+                        border-radius:11px;
+                        background:#f7faf8;">
+
+                        <span style="font-size:11px;color:#718079;">
+                            🏆 Organizasyon
+                        </span>
+
+                        <strong style="font-size:11px;">
+                            Serie A
+                        </strong>
+
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        padding:11px 12px;
+                        border-radius:11px;
+                        background:#f7faf8;">
+
+                        <span style="font-size:11px;color:#718079;">
+                            📅 Tarih
+                        </span>
+
+                        <strong style="font-size:11px;">
+                            @dateText
+                        </strong>
+
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        padding:11px 12px;
+                        border-radius:11px;
+                        background:#f7faf8;">
+
+                        <span style="font-size:11px;color:#718079;">
+                            🕐 Başlama
+                        </span>
+
+                        <strong style="font-size:11px;">
+                            @Model.Time
+                        </strong>
+
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        padding:11px 12px;
+                        border-radius:11px;
+                        background:#f7faf8;">
+
+                        <span style="font-size:11px;color:#718079;">
+                            🏟️ Stadyum
+                        </span>
+
+                        <strong style="
+                            font-size:11px;
+                            text-align:right;
+                            max-width:180px;">
+                            @Model.Stadium
+                        </strong>
+
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        padding:11px 12px;
+                        border-radius:11px;
+                        background:#f7faf8;">
+
+                        <span style="font-size:11px;color:#718079;">
+                            📌 Hafta
+                        </span>
+
+                        <strong style="font-size:11px;">
+                            @Model.Week
+                        </strong>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+        </aside>
+
+    </div>
+
+
+    <!-- FOOTER -->
+    <footer class="match-footer">
+
+        <div>
+            <span class="footer-brand">SERIE A MATCH CENTER</span>
+            &nbsp; • &nbsp;
+            Maç istatistikleri ve olay merkezi
         </div>
 
-        <footer class="ma-footer">
-            <strong>SERIE A · MATCH INTELLIGENCE</strong>
-            <span>Analizler mevcut API kayıtlarından hesaplanır.</span>
-        </footer>
-    </div>
-</main>
+        <div>
+            @Model.HomeTeam
+            <strong>@homeScore</strong>
+            -
+            <strong>@awayScore</strong>
+            @Model.AwayTeam
+        </div>
+
+    </footer>
+
+</div>
+
 
 <script>
+
+    // Üst taraftaki saat
+    function updateMatchClock() {
+
+        const now = new Date();
+
+        const hours = String(now.getHours()).padStart(2, "0");
+        const minutes = String(now.getMinutes()).padStart(2, "0");
+
+        const element = document.getElementById("matchClock");
+
+        if (element) {
+            element.innerHTML = "🕐 " + hours + ":" + minutes;
+        }
+    }
+
+    updateMatchClock();
+
+    setInterval(updateMatchClock, 30000);
+
+
+    // Kartlara giriş animasyonu
     document.addEventListener("DOMContentLoaded", function () {
-        const filterButtons = document.querySelectorAll("[data-filter]");
-        const eventItems = document.querySelectorAll("[data-event-type]");
 
-        filterButtons.forEach(button => {
-            button.addEventListener("click", () => {
-                const filter = button.dataset.filter;
+        const items = document.querySelectorAll(
+            ".event, .kpi, .team-card, .highlight, .panel"
+        );
 
-                filterButtons.forEach(item => item.classList.toggle("active", item === button));
+        items.forEach(function (item, index) {
 
-                eventItems.forEach(item => {
-                    item.hidden = filter !== "all" && item.dataset.eventType !== filter;
-                });
-            });
+            item.style.opacity = "0";
+            item.style.transform = "translateY(10px)";
+
+            setTimeout(function () {
+
+                item.style.transition =
+                    "opacity .45s ease, transform .45s ease";
+
+                item.style.opacity = "1";
+                item.style.transform = "translateY(0)";
+
+            }, Math.min(index * 35, 600));
+
         });
 
-        if (typeof Chart === "undefined") return;
-
-        Chart.defaults.color = "#91a5c8";
-        Chart.defaults.font.family = "Barlow, sans-serif";
-
-        const goalCanvas = document.getElementById("goalTimelineChart");
-        if (goalCanvas) {
-            const goalLabels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(goalBucketLabels));
-            const goalData = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(goalBuckets));
-
-            new Chart(goalCanvas, {
-                type: "bar",
-                data: {
-                    labels: goalLabels,
-                    datasets: [{
-                        label: "Gol",
-                        data: goalData,
-                        backgroundColor: ["#4d8dff", "#42d6e8", "#36d6a0", "#a98bff", "#f4c451", "#ff7890"],
-                        borderRadius: 8,
-                        borderSkipped: false,
-                        maxBarThickness: 42
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: { displayColors: false }
-                    },
-                    scales: {
-                        x: { grid: { display: false }, border: { display: false } },
-                        y: {
-                            beginAtZero: true,
-                            ticks: { precision: 0, stepSize: 1 },
-                            grid: { color: "rgba(145,165,200,.12)" },
-                            border: { display: false }
-                        }
-                    }
-                }
-            });
-        }
-
-        const cardsCanvas = document.getElementById("cardsChart");
-        if (cardsCanvas) {
-            const cardLabels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(new[] { home, away }));
-            const yellowData = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(new[] { homeYellow, awayYellow }));
-            const redData = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(new[] { homeRed, awayRed }));
-
-            new Chart(cardsCanvas, {
-                type: "bar",
-                data: {
-                    labels: cardLabels,
-                    datasets: [
-                        {
-                            label: "Sarı kart",
-                            data: yellowData,
-                            backgroundColor: "#f4c451",
-                            borderRadius: 6
-                        },
-                        {
-                            label: "Kırmızı kart",
-                            data: redData,
-                            backgroundColor: "#ff6177",
-                            borderRadius: 6
-                        }
-                    ]
-                },
-                options: {
-                    indexAxis: "y",
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: "bottom",
-                            labels: { usePointStyle: true, boxWidth: 8, padding: 18 }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            ticks: { precision: 0, stepSize: 1 },
-                            grid: { color: "rgba(145,165,200,.12)" },
-                            border: { display: false }
-                        },
-                        y: { grid: { display: false }, border: { display: false } }
-                    }
-                }
-            });
-        }
     });
+
 </script>
