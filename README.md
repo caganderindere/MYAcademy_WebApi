@@ -240,7 +240,7 @@ Bu proje sayesinde özellikle aşağıdaki konularda uygulamalı deneyim kazand�
 
 > Projenin arayüzünden örnek görüntüler:
 
-<img src="https://hizliresim.com/iujbf0d1" width="100%" alt="Serie A Football Platform"/>
+<img src="https://i.hizliresim.com/bid31alp.png" alt="Ekran görüntüsü 2026-10-16 114931.png">
 
 ---
 
