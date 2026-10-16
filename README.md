@@ -259,24 +259,7 @@ Backend ve Full Stack .NET teknolojileri üzerine çalışmalarını sürdürüy
 
 ---
 
-## 🔗 GitHub
 
-📂 Projenin kaynak kodlarına GitHub üzerinden ulaşabilirsiniz.
-
-**MYAcademy Web API / Serie A Football Platform**
-
----
-
-## 📌 Bootcamp
-
-Bu proje:
-
-**M&Y Yazılım Eğitim Akademi Danışmanlık**  
-**11. Dönem Full Stack .NET Bootcamp**
-
-kapsamında geliştirilmiştir.
-
----
 
 <div align="center">
 
